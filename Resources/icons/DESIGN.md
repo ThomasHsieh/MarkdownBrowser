@@ -30,6 +30,11 @@
 格線就是這樣，而這台機器是非 Retina 的 3840×1080，1× 素材真的會被用到，
 多擠出來的那幾個像素在 16 px 下差很多。
 
+**縮圖用 Lanczos，不用 AppKit 的 `.high`。** 母圖是立體算圖，縮到 32–64 px
+時 `.high` 內插明顯偏軟，在 LaunchBar 那種小圖清單裡看起來就糊。改用
+CoreImage 的 `CILanczosScaleTransform`，64 px 以下再補一點 `CIUnsharpMask`
+（強度 0.35 —— 再上去圓角方塊邊緣會浮出一圈黑色光暈，比糊還醜）。
+
 **打包交給 `iconutil`。** 不要手刻 ICNS 容器：手刻版本會把 16／32 px 掛在
 `icp4` / `icp5` 這兩個 OSType 上，而它們塞 PNG 是不可靠的 —— macOS 有解碼
 路徑會當成原始點陣資料，解出來是一片彩色雜訊，偏偏大尺寸正常，很容易漏看。

@@ -10,11 +10,16 @@
 //    會比 Dock 上其他圖示大一圈。所以先用 alpha 量出方塊實際範圍，
 //    再等比縮放置中到標準比例。
 //
-// 2. 打包交給 iconutil。手刻 ICNS 容器時 16／32 px 會掛在 icp4／icp5 上，
+// 2. 縮圖品質。母圖是 1254 px 的立體算圖，縮到 32–64 px 時 AppKit 的
+//    .high 內插明顯偏軟，在 LaunchBar 那種小圖清單裡看起來就糊。
+//    改用 CoreImage 的 Lanczos，小尺寸再補一點點 unsharp。
+//
+// 3. 打包交給 iconutil。手刻 ICNS 容器時 16／32 px 會掛在 icp4／icp5 上，
 //    而那兩個 OSType 塞 PNG 是不可靠的 —— macOS 有解碼路徑會當成原始點陣
 //    資料，解出來是一片彩色雜訊。
 
 import AppKit
+import CoreImage
 
 let output = URL(fileURLWithPath: CommandLine.arguments.dropFirst().first ?? "Resources/icons")
 let fm = FileManager.default
@@ -54,34 +59,44 @@ let bounds = solidBounds(masterRep)
 let masterW = Double(masterRep.pixelsWide)
 let masterH = Double(masterRep.pixelsHigh)
 
+let ciContext = CIContext(options: [.workingColorSpace: CGColorSpace(name: CGColorSpace.sRGB)!])
+let masterCI = CIImage(bitmapImageRep: masterRep)!
+
 func render(_ size: Int) -> Data {
     let target = Double(size) * tileRatio(for: size)
-    let scale = target / max(bounds.width, bounds.height)
-    let drawnWidth = masterW * scale
-    let drawnHeight = masterH * scale
+    let k = target / max(bounds.width, bounds.height)
+
+    // Lanczos 而不是 AppKit 的 .high —— 後者在 32–64 px 這個區間明顯偏軟。
+    let lanczos = CIFilter(name: "CILanczosScaleTransform")!
+    lanczos.setValue(masterCI, forKey: kCIInputImageKey)
+    lanczos.setValue(k, forKey: kCIInputScaleKey)
+    lanczos.setValue(1.0, forKey: kCIInputAspectRatioKey)
+    var image = lanczos.outputImage!
+
+    // 只有真正小的尺寸需要補銳度。強度壓在 0.35：再上去圓角方塊的邊緣
+    // 就會浮出一圈黑色光暈，比糊還醜。
+    if size <= 64 {
+        let sharpen = CIFilter(name: "CIUnsharpMask")!
+        sharpen.setValue(image, forKey: kCIInputImageKey)
+        sharpen.setValue(0.9, forKey: kCIInputRadiusKey)
+        sharpen.setValue(0.35, forKey: kCIInputIntensityKey)
+        image = sharpen.outputImage!
+    }
 
     // 把圓角方塊的中心對到畫布中心，而不是把整張母圖置中 —— 母圖的陰影不對稱，
-    // 整張置中會讓方塊看起來偏上。注意 bounds 的 y 由上往下數（點陣座標），
-    // 繪圖座標由下往上，所以要翻一次。
-    let centreX = (bounds.midX / masterW) * drawnWidth
-    let centreY = ((masterH - bounds.midY) / masterH) * drawnHeight
-    let originX = Double(size) / 2 - centreX
-    let originY = Double(size) / 2 - centreY
+    // 整張置中會讓方塊看起來偏上。bounds 的 y 由上往下數（點陣座標），
+    // CoreImage 由下往上，所以要翻一次。
+    let dx = Double(size) / 2 - bounds.midX * k
+    let dy = Double(size) / 2 - (masterH - bounds.midY) * k
+    image = image.transformed(by: CGAffineTransform(translationX: dx, y: dy))
 
-    let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: size, pixelsHigh: size,
-        bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
-        colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
-    let context = NSGraphicsContext(bitmapImageRep: bitmap)!
-    NSGraphicsContext.saveGraphicsState()
-    NSGraphicsContext.current = context
-    context.imageInterpolation = .high
-    masterRep.draw(in: NSRect(x: originX, y: originY,
-                              width: drawnWidth, height: drawnHeight),
-                   from: .zero, operation: .sourceOver, fraction: 1,
-                   respectFlipped: true,
-                   hints: [.interpolation: NSNumber(value: NSImageInterpolation.high.rawValue)])
-    NSGraphicsContext.restoreGraphicsState()
-    return bitmap.representation(using: .png, properties: [:])!
+    let rect = CGRect(x: 0, y: 0, width: size, height: size)
+    guard let cg = ciContext.createCGImage(image, from: rect, format: .RGBA8,
+                                           colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!) else {
+        FileHandle.standardError.write("\(size) px 算圖失敗\n".data(using: .utf8)!)
+        exit(1)
+    }
+    return NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:])!
 }
 
 let iconset = output.appendingPathComponent("AppIcon.iconset")
