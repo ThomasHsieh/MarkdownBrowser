@@ -10,18 +10,20 @@
 ## 建置
 
 ```bash
-make          # 取字型 → 編譯 → 組 .app → ad-hoc 簽章
-make install  # 裝到 ~/Applications 並向 LaunchServices 註冊
-make run      # 建置後直接開
+make              # 取字型 → 編譯 → 組 .app → ad-hoc 簽章
+make install      # 裝到 ~/Applications 並向 LaunchServices 註冊
+make set-default  # 把 .md 的預設開啟程式設成這個 App
+make status       # 查 .md 目前的預設開啟程式是誰
+make run          # 建置後直接開
 ```
 
 字型不進版控，`make` 時依序找 `~/books/fonts/` → `~/Library/Fonts/`
 → 官方 release 下載。共四個 Regular 字面：霞鶩文楷（楷體）與更紗黑體（黑體）
 各有比例版與等寬版。Sarasa 官方只提供 7z，那條路需要 `brew install p7zip`。
 
-裝好之後，`.md` 的預設開啟程式要自己改一次：LaunchServices 不准 App 自己搶，
-在 Finder 對任一 `.md` 按「取得資訊 → 打開方式 → 全部更改」。
-ad-hoc 簽章的 App 第一次開可能要去「系統設定 → 隱私權與安全性」放行。
+`make set-default` 會把 `.md` 的預設開啟程式指過來（等同 Finder 的
+「取得資訊 → 打開方式 → 全部更改」）。ad-hoc 簽章的 App 第一次開
+可能要去「系統設定 → 隱私權與安全性」放行。
 
 ## 快捷鍵
 

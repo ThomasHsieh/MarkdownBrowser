@@ -232,8 +232,16 @@ markdown-it 預設 CommonMark ＋ 打開 GFM 需要的：`tables`、`strikethrou
 `public.markdown` 與副檔名 `md`/`markdown`/`mdown`/`mkd`，
 `LSHandlerRank` 設 `Owner`，角色 `Viewer`。
 
-`.md` 目前由 MarkEdit 持有。LaunchServices 不准 App 自己搶預設程式，
-安裝後要在 Finder 對任一 `.md` 按「取得資訊 → 打開方式 → 全部更改」一次。
+`Info.plist` 裡宣告 `Owner` 只代表「我有能力開」，不等於預設程式 ——
+真正的預設是使用者層級的設定。`make set-default` 會呼叫
+`NSWorkspace.setDefaultApplication(at:toOpen:)` 明確指定，
+等同 Finder 的「取得資訊 → 打開方式 → 全部更改」，`make status` 可以查目前是誰。
+
+一個會踩到的坑：預設程式是**用 bundle ID 存的**，不是路徑。
+所以同一個 bundle ID 有兩份副本被 LaunchServices 註冊時（建置產物與安裝的那份），
+解析結果不一定是你要的那份。因此 `.app` 一律組在 `.build/` 底下，
+`~/Applications` 的那份才是唯一會被開到的；`set-default-app.swift` 也
+優先挑 `~/Applications` 而不是用 bundle ID 反查。
 
 開檔走 `NSApplicationDelegate.application(_:open:)`，一次開多個檔時只讀第一個
 （v1 沒有分頁）。
@@ -243,14 +251,16 @@ markdown-it 預設 CommonMark ＋ 打開 GFM 需要的：`tables`、`strikethrou
 ```bash
 make          # 取字型 → swift build -c release → 組 .app → codesign --sign -
 make install  # 複製到 ~/Applications 並 lsregister
-make run      # 建置後直接開
+make run          # 建置後直接開
+make set-default  # 把 .md 的預設開啟程式設成這個 App
+make status       # 查 .md 目前的預設開啟程式是誰
 make clean
 ```
 
 `.app` 由 Makefile 手工組出來：
 
 ```
-MarkdownBrowser.app/Contents/
+.build/MarkdownBrowser.app/Contents/
   Info.plist
   MacOS/MarkdownBrowser
   Resources/web/{index.html,app.js,base.css,themes/,vendor/}

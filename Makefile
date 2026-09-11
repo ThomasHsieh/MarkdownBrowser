@@ -1,10 +1,13 @@
 APP        := MarkdownBrowser
-BUNDLE     := $(APP).app
+# 組在 .build/ 底下而不是專案根目錄：同一個 bundle ID 有兩份副本被
+# LaunchServices 註冊時，.md 的預設程式會解析到開發那份，而它會被 make clean 砍掉。
+BUNDLE     := .build/$(APP).app
+BUNDLE_NAME := $(APP).app
 BUILD_DIR  := .build/release
 CACHE      := .cache/fonts
 INSTALL_TO := $(HOME)/Applications
 
-.PHONY: all build app fonts install run clean uninstall
+.PHONY: all build app fonts install run clean uninstall set-default status
 
 all: app
 
@@ -19,6 +22,7 @@ build:
 app: fonts build
 	@echo "→ 組 $(BUNDLE)"
 	@rm -rf "$(BUNDLE)"
+	@mkdir -p .build
 	@mkdir -p "$(BUNDLE)/Contents/MacOS" "$(BUNDLE)/Contents/Resources/web/fonts"
 	@cp Resources/Info.plist "$(BUNDLE)/Contents/Info.plist"
 	@cp "$(BUILD_DIR)/$(APP)" "$(BUNDLE)/Contents/MacOS/$(APP)"
@@ -33,23 +37,28 @@ app: fonts build
 		|| echo "  ⚠️  ad-hoc 簽章失敗，App 仍可執行"
 	@echo "→ 完成：$(BUNDLE)"
 
+set-default:
+	@swift scripts/set-default-app.swift
+
+status:
+	@swift scripts/set-default-app.swift --status
+
 install: app
 	@mkdir -p "$(INSTALL_TO)"
-	@rm -rf "$(INSTALL_TO)/$(BUNDLE)"
+	@rm -rf "$(INSTALL_TO)/$(BUNDLE_NAME)"
 	@cp -R "$(BUNDLE)" "$(INSTALL_TO)/"
 	@/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
-		-f "$(INSTALL_TO)/$(BUNDLE)"
-	@echo "→ 已安裝到 $(INSTALL_TO)/$(BUNDLE)"
-	@echo "   .md 目前由 MarkEdit 持有。LaunchServices 不准 App 自己搶預設程式，"
-	@echo "   要在 Finder 對任一 .md 按「取得資訊 → 打開方式 → 全部更改」一次。"
+		-f "$(INSTALL_TO)/$(BUNDLE_NAME)"
+	@echo "→ 已安裝到 $(INSTALL_TO)/$(BUNDLE_NAME)"
+	@echo "   要讓 Finder 雙點擊 .md 開這個 App，再跑一次：make set-default"
 
 run: app
 	@open "$(BUNDLE)"
 
 uninstall:
-	@rm -rf "$(INSTALL_TO)/$(BUNDLE)"
-	@echo "→ 已移除 $(INSTALL_TO)/$(BUNDLE)"
+	@rm -rf "$(INSTALL_TO)/$(BUNDLE_NAME)"
+	@echo "→ 已移除 $(INSTALL_TO)/$(BUNDLE_NAME)"
 
 clean:
-	@rm -rf .build "$(BUNDLE)"
+	@rm -rf .build
 	@echo "→ 已清除（字型快取 $(CACHE) 保留）"
