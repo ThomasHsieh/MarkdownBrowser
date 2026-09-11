@@ -71,6 +71,12 @@ struct MarkdownBrowserApp: App {
                 }
             }
 
+            Picker("外觀", selection: Binding(get: { state.appearance }, set: { state.appearance = $0 })) {
+                ForEach(AppState.appearanceChoices, id: \.id) { choice in
+                    Text(choice.name).tag(choice.id)
+                }
+            }
+
             Picker("字體", selection: Binding(get: { state.fontFamily }, set: { state.fontFamily = $0 })) {
                 ForEach(Array(AppState.fontChoices.enumerated()), id: \.element.id) { index, choice in
                     Text(choice.name).tag(choice.id)

@@ -63,3 +63,24 @@
 :root[data-theme="terminal"] hr {
   border-top-color: var(--rule);
 }
+
+/* ── 淺色模式 ──────────────────────────────────────────
+ * 終端機主題在淺色下就是「淺色終端機」：框線仍然用內文色畫，
+ * 標題仍然只靠顏色分層（沒有字級差），橘色一樣壓深到通過 AA。
+ */
+:root[data-theme="terminal"][data-appearance="light"] {
+  --bg: #faf8f3;
+  --fg: #3a3a3a;
+  --accent: #a2541a;
+  --muted: #7a7368;
+  --rule: #3a3a3a;            /* 框線＝內文色，與深色模式的邏輯一致 */
+  --quote-bar: #b9b2a5;
+  --link: #1d5fa8;
+  --code-bg: transparent;
+
+  --h1-color: var(--accent);
+  --h2-color: var(--accent);
+  --h3-color: var(--accent);
+  --h4-color: var(--accent);
+  --th-fg: var(--fg);
+}

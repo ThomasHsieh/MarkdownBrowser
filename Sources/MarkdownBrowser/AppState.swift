@@ -32,6 +32,15 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// 外觀：`auto` 跟隨系統，或強制 `light` / `dark`。
+    /// 與主題、字體同樣正交 —— 主題決定版面，外觀只決定明暗那一組顏色。
+    @Published var appearance: String {
+        didSet {
+            defaults.set(appearance, forKey: Keys.appearance)
+            applyAppearance()
+        }
+    }
+
     /// 中文字體：`kai`（霞鶩文楷）或 `gothic`（更紗黑體）。
     /// 與主題正交 —— 主題管顏色與版面，這個只管用哪套字。
     @Published var fontFamily: String {
@@ -67,6 +76,7 @@ final class AppState: ObservableObject {
         static let theme = "theme"
         static let fontSize = "fontSize"
         static let fontFamily = "fontFamily"
+        static let appearance = "appearance"
         static let sidebar = "sidebarVisible"
         static let lastDocument = "lastDocumentBookmark"
         static let recents = "recentDocuments"
@@ -77,6 +87,7 @@ final class AppState: ObservableObject {
 
     private init() {
         theme = defaults.string(forKey: Keys.theme) ?? "reading"
+        appearance = defaults.string(forKey: Keys.appearance) ?? "auto"
         fontFamily = defaults.string(forKey: Keys.fontFamily) ?? "kai"
         fontSize = defaults.object(forKey: Keys.fontSize) as? Double ?? 17
         sidebarVisible = defaults.object(forKey: Keys.sidebar) as? Bool ?? true
@@ -87,6 +98,7 @@ final class AppState: ObservableObject {
 
         UserAssets.ensureDirectories()
         refreshThemes()
+        observeSystemAppearance()
 
         // 改了自訂主題的 CSS 立刻生效。
         configWatcher = FileWatcher(url: UserAssets.themesDirectory, debounce: 0.2) { [weak self] in
@@ -157,6 +169,7 @@ final class AppState: ObservableObject {
     /// 網頁端載入完成後補送一次目前狀態。
     func pushInitialState() {
         bridge?.setTheme(theme)
+        bridge?.setAppearance(resolvedAppearance)
         bridge?.setFontFamily(fontFamily)
         bridge?.setFontSize(fontSize)
         bridge?.setUserTheme(UserAssets.userThemeCSS())
@@ -207,6 +220,49 @@ final class AppState: ObservableObject {
 
     func resetFontSize() { fontSize = 17 }
 
+    /// 選單與工具列共用的外觀清單。比照 Safari 的「顯示方式 → 外觀」。
+    static let appearanceChoices: [(id: String, name: String)] = [
+        ("auto", "自動"),
+        ("light", "淺色"),
+        ("dark", "深色"),
+    ]
+
+    /// `auto` 要問系統現在是哪一種，其餘直接用。
+    var resolvedAppearance: String {
+        guard appearance == "auto" else { return appearance }
+        let match = NSApp?.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua])
+        return match == .darkAqua ? "dark" : "light"
+    }
+
+    /// 網頁端換色，同時讓視窗外框（側欄、工具列、標題列）跟著走。
+    /// 強制模式要設 NSApp.appearance，否則只有內容區變、外框還是系統的。
+    private func applyAppearance() {
+        switch appearance {
+        case "light": NSApp?.appearance = NSAppearance(named: .aqua)
+        case "dark": NSApp?.appearance = NSAppearance(named: .darkAqua)
+        default: NSApp?.appearance = nil          // nil = 交還給系統
+        }
+        bridge?.setAppearance(resolvedAppearance)
+    }
+
+    /// 跟隨系統時，使用者在系統設定裡切換明暗要立刻反映。
+    ///
+    /// 不要用 KVO 盯 `NSApp.effectiveAppearance` —— 它不保證 KVO 相容，實測
+    /// 系統切換時不會觸發（視窗外框自己變了，網頁內容卻還留在深色）。
+    /// 可靠的做法是聽系統廣播的佈景變更通知。通知送達時 effectiveAppearance
+    /// 偶爾還沒更新，所以晚一個 runloop 再讀。
+    private func observeSystemAppearance() {
+        DistributedNotificationCenter.default.addObserver(
+            forName: Notification.Name("AppleInterfaceThemeChangedNotification"),
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.appearance == "auto" else { return }
+                self.bridge?.setAppearance(self.resolvedAppearance)
+            }
+        }
+    }
+
     /// 選單與工具列共用的字體清單。
     static let fontChoices: [(id: String, name: String)] = [
         ("kai", "楷體"),
@@ -238,6 +294,7 @@ final class AppState: ObservableObject {
 protocol WebBridge: AnyObject {
     func render(markdown: String, keepScroll: Bool)
     func setTheme(_ name: String)
+    func setAppearance(_ mode: String)
     func setFontFamily(_ name: String)
     func setFontSize(_ px: Double)
     func setUserTheme(_ css: String)

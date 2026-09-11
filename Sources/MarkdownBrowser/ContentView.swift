@@ -38,10 +38,19 @@ struct ContentView: View {
                     }
                 }
                 .pickerStyle(.inline)
+
+                Divider()
+
+                Picker("外觀", selection: Binding(get: { state.appearance }, set: { state.appearance = $0 })) {
+                    ForEach(AppState.appearanceChoices, id: \.id) { choice in
+                        Text(choice.name).tag(choice.id)
+                    }
+                }
+                .pickerStyle(.inline)
             } label: {
-                Label("主題", systemImage: "paintpalette")
+                Label("主題與外觀", systemImage: "paintpalette")
             }
-            .help("切換主題　⌘1 ⌘2")
+            .help("切換主題與明暗　⌘1 ⌘2")
 
             Menu {
                 Picker("字體", selection: Binding(get: { state.fontFamily }, set: { state.fontFamily = $0 })) {

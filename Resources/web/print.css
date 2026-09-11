@@ -1,5 +1,6 @@
 /* print.css —— 列印與匯出 PDF：白底黑字，粗體轉深赭。
- * #DD9853 在白底上對比不足，所以換成 #8A4B12。粗體仍然不加粗。
+ * #DD9853 在白底上只有 2.4:1，所以換成淺色模式那個 #A2541A（5.2:1）。
+ * 粗體仍然不加粗。
  */
 
 @page {
@@ -11,7 +12,7 @@
 :root[data-theme="reading"] {
   --bg: #ffffff;
   --fg: #1a1a1a;
-  --accent: #8a4b12;
+  --accent: #a2541a;   /* 與淺色模式同一個橘 */
   --muted: #6a6a6a;
   --rule: #c8c8c8;
   --quote-bar: #b0b0b0;

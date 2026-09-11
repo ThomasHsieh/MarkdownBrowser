@@ -123,6 +123,10 @@ MB.setTheme = function (name) {
   document.documentElement.setAttribute('data-theme', name);
 };
 
+MB.setAppearance = function (mode) {
+  document.documentElement.setAttribute('data-appearance', mode);
+};
+
 MB.setFontFamily = function (name) {
   document.documentElement.setAttribute('data-font', name);
 };

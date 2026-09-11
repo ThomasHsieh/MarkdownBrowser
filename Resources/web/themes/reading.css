@@ -67,3 +67,37 @@
 :root[data-theme="reading"] tbody tr:nth-child(even) {
   background: rgba(255, 255, 255, 0.02);
 }
+
+/* ── 淺色模式 ──────────────────────────────────────────
+ * 不是把深色那套反過來就好。#DD9853 是為深色底調的橘，放到暖白紙上
+ * 對比只有 2.28:1，遠低於內文需要的 4.5:1，整個會糊掉。
+ * 所以維持同一個色相，往下壓到通過 AA 為止（#A2541A，5.18:1）。
+ * 標題的淺藍同理（#A2D2FC 在紙上只有 1.50:1）。
+ *
+ * 底色用暖白 #FAF8F3 而不是純白：楷體長文在純白上偏刺眼。
+ */
+:root[data-theme="reading"][data-appearance="light"] {
+  --bg: #faf8f3;
+  --fg: #2a2a2a;              /* 13.5:1 */
+  --accent: #a2541a;          /*  5.2:1 —— 與深色模式同色相，壓深到通過 AA */
+  --muted: #7a7368;
+  --rule: #ddd8ce;
+  --quote-bar: #b9b2a5;
+  --link: #1d5fa8;
+  --code-bg: #f0ece3;
+
+  --heading: #2c5c8a;         /*  6.6:1 —— 深色模式那個淺藍的對應深色 */
+  --h1-color: var(--heading);
+  --h2-color: var(--heading);
+  --h3-color: var(--heading);
+  --h4-color: var(--heading);
+  --th-fg: #1f1f1f;
+}
+
+:root[data-theme="reading"][data-appearance="light"] th {
+  background: rgba(0, 0, 0, 0.035);
+}
+
+:root[data-theme="reading"][data-appearance="light"] tbody tr:nth-child(even) {
+  background: rgba(0, 0, 0, 0.02);
+}
