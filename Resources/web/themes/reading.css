@@ -17,8 +17,9 @@
   --link: #7aa6d6;
   --code-bg: #242424;
 
-  /* 比例版霞鶩文楷自帶拉丁字，中英數同一套筆觸。 */
-  --font-body: "LXGW WenKai TC", "LXGW WenKai Mono TC", serif;
+  /* 比例版的中文字型自帶拉丁字，中英數同一套筆觸。實際是楷體還是黑體，
+     由 data-font 決定（見 base.css）。 */
+  --font-body: var(--cjk), serif;
   --font-mono: "SF Mono", ui-monospace, monospace;
   --line-height: 1.9;
 

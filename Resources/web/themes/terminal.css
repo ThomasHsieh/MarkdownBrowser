@@ -17,8 +17,8 @@
   --link: #7aa6d6;
   --code-bg: transparent;
 
-  --font-body: "SF Mono", "LXGW WenKai Mono TC", ui-monospace, monospace;
-  --font-mono: "SF Mono", "LXGW WenKai Mono TC", ui-monospace, monospace;
+  --font-body: "SF Mono", var(--cjk-mono), ui-monospace, monospace;
+  --font-mono: "SF Mono", var(--cjk-mono), ui-monospace, monospace;
   --line-height: 1.75;
 
   /* 終端機沒有字級可用，標題只能靠顏色分層。 */

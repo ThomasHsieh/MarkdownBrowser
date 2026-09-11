@@ -101,7 +101,24 @@ Swift 端只做「殼」——開檔、監聽、選單、側欄資料。所有�
 - 行內程式碼仍走 `SF Mono`
 - 行高 1.9
 
-### 4.4 行寬
+### 4.4 字體（與主題正交）
+
+中文字體是獨立於主題的第二個軸。主題決定顏色與版面，`data-font` 只決定用哪套中文字：
+
+| | 楷體 `kai`（預設） | 黑體 `gothic` |
+|---|---|---|
+| 比例（閱讀主題） | LXGW WenKai TC | Sarasa Gothic TC |
+| 等寬（終端機主題） | LXGW WenKai Mono TC | Sarasa Mono TC |
+
+`base.css` 把這兩組寫成 `--cjk` / `--cjk-mono`，主題檔只引用變數。
+自訂主題想跟著切換，`font-family` 寫 `var(--cjk)` 就好。
+
+**黑體的粗體也不加粗。** `switch-font.sh` 的 gothic profile 在終端機裡是把粗體
+升到 SemiBold 的，這裡刻意不跟 —— 兩套字體的行為要一致，粗體永遠只換色，
+否則「粗體長什麼樣」會隨字體而變。實作上是 `@font-face` 只帶 Regular、
+字重範圍開成 `100 900`，任何字重請求都落回同一個字面。
+
+### 4.5 行寬
 
 **隨視窗滿版**，只留固定左右內距（`3rem`），不設 `max-width`。
 `Cmd +` / `Cmd -` 調字級，`Cmd 0` 重設。
@@ -112,7 +129,8 @@ Swift 端只做「殼」——開檔、監聽、選單、側欄資料。所有�
 |---|---|---|
 | 開檔 | `Cmd O` | 也支援 Finder 雙點擊與拖放 |
 | 最近開啟 | — | 檔案選單的子選單，最多 10 筆，自己存在 UserDefaults |
-| 切主題 | `Cmd 1` / `Cmd 2` | 終端機／閱讀，記住上次選的 |
+| 切主題 | `Cmd 1` / `Cmd 2` | 閱讀／終端機，記住上次選的 |
+| 切字體 | `Cmd 3` / `Cmd 4` | 楷體／黑體，記住上次選的 |
 | 調字級 | `Cmd +` `Cmd -` `Cmd 0` | 存進 UserDefaults |
 | 側欄 | `Cmd \` | 可收合 |
 | 搜尋 | `Cmd F` | 全部命中高亮、顯示第 n／共 m、Enter 下一筆、Shift-Enter 上一筆 |
@@ -122,7 +140,7 @@ Swift 端只做「殼」——開檔、監聽、選單、側欄資料。所有�
 
 ### 5.1 工具列
 
-常用動作同時放在工具列：側欄開關（靠左）、主題、字級加減、搜尋、
+常用動作同時放在工具列：側欄開關（靠左）、主題、字體、字級加減、搜尋、
 用 MarkEdit 開啟、列印。每個都給 `Label`（圖示＋標題），
 使用者右鍵可以自己切換要不要顯示文字。
 
@@ -187,18 +205,26 @@ markdown-it 預設 CommonMark ＋ 打開 GFM 需要的：`tables`、`strikethrou
 
 ## 7. 字型
 
-內嵌進 `.app`，只需要 Regular 字面（粗體靠顏色，不靠字重）：
+內嵌進 `.app`，每套只需要 Regular 字面（粗體靠顏色，不靠字重）：
 
-- `LXGWWenKaiTC-Regular.ttf`（比例版，13 MB）
-- `LXGWWenKaiMonoTC-Regular.ttf`（等寬版，13 MB）
+| 檔案 | 大小 | 用途 |
+|---|---|---|
+| `LXGWWenKaiTC-Regular.ttf` | 13 MB | 楷體・比例 |
+| `LXGWWenKaiMonoTC-Regular.ttf` | 13 MB | 楷體・等寬 |
+| `SarasaGothicTC-Regular.ttf` | 24 MB | 黑體・比例 |
+| `SarasaMonoTC-Regular.ttf` | 26 MB | 黑體・等寬 |
 
-**不進版控。** `make` 時依序找：
+成品 `.app` 約 73 MB，絕大部分是字型。
 
-1. `~/books/fonts/`
-2. `~/Library/Fonts/`
-3. 都沒有 → 從 LXGW 官方 GitHub release 下載到 `.cache/fonts/`
+**不進版控。** `make` 時依序找 `~/books/fonts/` →
+`~/Library/Fonts/` → 官方 GitHub release 下載到 `.cache/fonts/`。
 
-比例版 `LXGWWenKaiTC-*` 目前沒裝在系統，只在 `books/fonts/` 裡；等寬版兩處都有。
+兩個踩過的坑：
+
+- 比例版 `LXGWWenKaiTC-*` 沒裝在系統，只在 `books/fonts/` 裡；等寬版兩處都有。
+- Sarasa 官方**只提供 7z**，而且要整個家族一包（約 60 MB）才拿得到那一個字面，
+  所以下載那條路需要 `7z`（`brew install p7zip`）。系統裡那份 Sarasa 是
+  832 MB 的 `.ttc` 集合檔，拆不出單一 TTF，幫不上忙。
 
 ## 8. Finder 關聯
 

@@ -27,6 +27,19 @@
   --h4-color: var(--fg);
 }
 
+/* 字體與主題是兩個獨立的軸：主題決定顏色與版面，data-font 只決定用哪套中文字。
+   兩套都只帶 Regular 字面，字重範圍在 @font-face 開成 100–900，
+   所以任何字重的請求都落回同一個字面 —— 粗體永遠不會加粗，只換色。
+   自訂主題想跟著切換，font-family 寫 var(--cjk) 或 var(--cjk-mono) 就好。 */
+:root[data-font="kai"] {
+  --cjk: "LXGW WenKai TC";
+  --cjk-mono: "LXGW WenKai Mono TC";
+}
+:root[data-font="gothic"] {
+  --cjk: "Sarasa Gothic TC", "PingFang TC";
+  --cjk-mono: "Sarasa Mono TC", "PingFang TC";
+}
+
 * { box-sizing: border-box; }
 
 html, body {

@@ -71,6 +71,13 @@ struct MarkdownBrowserApp: App {
                 }
             }
 
+            Picker("字體", selection: Binding(get: { state.fontFamily }, set: { state.fontFamily = $0 })) {
+                ForEach(Array(AppState.fontChoices.enumerated()), id: \.element.id) { index, choice in
+                    Text(choice.name).tag(choice.id)
+                        .keyboardShortcut(KeyEquivalent(Character("\(index + 3)")))
+                }
+            }
+
             Divider()
 
             Button("放大文字") { state.bumpFontSize(1) }

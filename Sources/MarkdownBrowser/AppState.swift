@@ -32,6 +32,15 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// 中文字體：`kai`（霞鶩文楷）或 `gothic`（更紗黑體）。
+    /// 與主題正交 —— 主題管顏色與版面，這個只管用哪套字。
+    @Published var fontFamily: String {
+        didSet {
+            defaults.set(fontFamily, forKey: Keys.fontFamily)
+            bridge?.setFontFamily(fontFamily)
+        }
+    }
+
     @Published var fontSize: Double {
         didSet {
             defaults.set(fontSize, forKey: Keys.fontSize)
@@ -57,6 +66,7 @@ final class AppState: ObservableObject {
     private enum Keys {
         static let theme = "theme"
         static let fontSize = "fontSize"
+        static let fontFamily = "fontFamily"
         static let sidebar = "sidebarVisible"
         static let lastDocument = "lastDocumentBookmark"
         static let recents = "recentDocuments"
@@ -67,6 +77,7 @@ final class AppState: ObservableObject {
 
     private init() {
         theme = defaults.string(forKey: Keys.theme) ?? "reading"
+        fontFamily = defaults.string(forKey: Keys.fontFamily) ?? "kai"
         fontSize = defaults.object(forKey: Keys.fontSize) as? Double ?? 17
         sidebarVisible = defaults.object(forKey: Keys.sidebar) as? Bool ?? true
 
@@ -146,6 +157,7 @@ final class AppState: ObservableObject {
     /// 網頁端載入完成後補送一次目前狀態。
     func pushInitialState() {
         bridge?.setTheme(theme)
+        bridge?.setFontFamily(fontFamily)
         bridge?.setFontSize(fontSize)
         bridge?.setUserTheme(UserAssets.userThemeCSS())
         bridge?.setUserFonts(UserAssets.userFontCSS())
@@ -195,6 +207,12 @@ final class AppState: ObservableObject {
 
     func resetFontSize() { fontSize = 17 }
 
+    /// 選單與工具列共用的字體清單。
+    static let fontChoices: [(id: String, name: String)] = [
+        ("kai", "楷體"),
+        ("gothic", "黑體"),
+    ]
+
     // MARK: - 外部程式
 
     func openInMarkEdit() {
@@ -220,6 +238,7 @@ final class AppState: ObservableObject {
 protocol WebBridge: AnyObject {
     func render(markdown: String, keepScroll: Bool)
     func setTheme(_ name: String)
+    func setFontFamily(_ name: String)
     func setFontSize(_ px: Double)
     func setUserTheme(_ css: String)
     func setUserFonts(_ css: String)

@@ -43,6 +43,18 @@ struct ContentView: View {
             }
             .help("切換主題　⌘1 ⌘2")
 
+            Menu {
+                Picker("字體", selection: Binding(get: { state.fontFamily }, set: { state.fontFamily = $0 })) {
+                    ForEach(AppState.fontChoices, id: \.id) { choice in
+                        Text(choice.name).tag(choice.id)
+                    }
+                }
+                .pickerStyle(.inline)
+            } label: {
+                Label("字體", systemImage: "character.textbox")
+            }
+            .help("楷體／黑體　⌘3 ⌘4")
+
             ControlGroup {
                 Button { state.bumpFontSize(-1) } label: {
                     Label("縮小文字", systemImage: "textformat.size.smaller")

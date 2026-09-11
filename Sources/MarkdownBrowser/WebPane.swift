@@ -105,6 +105,7 @@ struct WebPane: NSViewRepresentable {
         }
 
         func setTheme(_ name: String) { eval("MB.setTheme(\(literal(name)))") }
+        func setFontFamily(_ name: String) { eval("MB.setFontFamily(\(literal(name)))") }
         func setFontSize(_ px: Double) { eval("MB.setFontSize(\(px))") }
         func setUserTheme(_ css: String) { eval("MB.setUserTheme(\(literal(css)))") }
         func setUserFonts(_ css: String) { eval("MB.setUserFonts(\(literal(css)))") }

@@ -1,4 +1,4 @@
-/* fonts.css —— 內嵌的霞鶩文楷。
+/* fonts.css —— 內嵌的中文字型：霞鶩文楷（楷體）與更紗黑體（黑體）。
  *
  * 只帶 Regular 一個字面。粗體的訊號交給顏色，不交給字重，
  * 所以 font-weight 範圍開成 100–900：任何字重的請求都落回同一個字面，
@@ -16,6 +16,22 @@
 @font-face {
   font-family: "LXGW WenKai Mono TC";
   src: url("fonts/LXGWWenKaiMonoTC-Regular.ttf") format("truetype");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "Sarasa Gothic TC";
+  src: url("fonts/SarasaGothicTC-Regular.ttf") format("truetype");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "Sarasa Mono TC";
+  src: url("fonts/SarasaMonoTC-Regular.ttf") format("truetype");
   font-weight: 100 900;
   font-style: normal;
   font-display: block;
