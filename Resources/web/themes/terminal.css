@@ -1,0 +1,65 @@
+/* terminal.css —— 終端機主題
+ *
+ * 盡量貼近 Claude Code 在 cmux／ghostty 裡的樣子：等寬霞鶩文楷、
+ * 標題與內文同字級、標題與粗體都是橘色。顏色全部取樣自實機截圖。
+ *
+ * 唯一刻意的偏離：表格框線用 CSS 1px 細線，而不是 box-drawing 字元。
+ * 真對齊要自己算雙寬字元寬度、自己折行、自己補空白，畫面差別只在框線粗細。
+ */
+
+:root[data-theme="terminal"] {
+  --bg: #1c1c1c;
+  --fg: #cecece;
+  --accent: #dd9853;
+  --muted: #8a8a8a;
+  --rule: #cecece;            /* 終端機的 box-drawing 就是用內文色畫的 */
+  --quote-bar: #757575;
+  --link: #7aa6d6;
+  --code-bg: transparent;
+
+  --font-body: "SF Mono", "LXGW WenKai Mono TC", ui-monospace, monospace;
+  --font-mono: "SF Mono", "LXGW WenKai Mono TC", ui-monospace, monospace;
+  --line-height: 1.75;
+
+  /* 終端機沒有字級可用，標題只能靠顏色分層。 */
+  --h1-size: 1em;
+  --h2-size: 1em;
+  --h3-size: 1em;
+  --h4-size: 1em;
+  --h1-color: var(--accent);
+  --h2-color: var(--accent);
+  --h3-color: var(--accent);
+  --h4-color: var(--accent);
+}
+
+:root[data-theme="terminal"] h1,
+:root[data-theme="terminal"] h2,
+:root[data-theme="terminal"] h3,
+:root[data-theme="terminal"] h4 {
+  margin: 1.6em 0 0.9em;
+}
+
+:root[data-theme="terminal"] pre {
+  border-color: var(--rule);
+  background: transparent;
+}
+
+:root[data-theme="terminal"] code {
+  background: none;
+  padding: 0;
+  font-size: 1em;
+  color: inherit;
+}
+
+/* 終端機裡的表格是用 ─│┌┐└┘ 畫的，等寬細框最接近。 */
+:root[data-theme="terminal"] table {
+  width: auto;
+  min-width: 60%;
+}
+:root[data-theme="terminal"] th,
+:root[data-theme="terminal"] td {
+  padding: 0.25em 0.9em;
+}
+:root[data-theme="terminal"] hr {
+  border-top-color: var(--rule);
+}

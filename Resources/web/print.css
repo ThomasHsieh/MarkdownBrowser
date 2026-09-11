@@ -1,0 +1,63 @@
+/* print.css —— 列印與匯出 PDF：白底黑字，粗體轉深赭。
+ * #DD9853 在白底上對比不足，所以換成 #8A4B12。粗體仍然不加粗。
+ */
+
+@page {
+  margin: 18mm 16mm;
+}
+
+:root,
+:root[data-theme="terminal"],
+:root[data-theme="reading"] {
+  --bg: #ffffff;
+  --fg: #1a1a1a;
+  --accent: #8a4b12;
+  --muted: #6a6a6a;
+  --rule: #c8c8c8;
+  --quote-bar: #b0b0b0;
+  --link: #1a1a1a;
+  --code-bg: #f4f4f4;
+
+  --h1-color: #000000;
+  --h2-color: #000000;
+  --h3-color: #1a1a1a;
+  --h4-color: #1a1a1a;
+}
+
+html, body {
+  background: #ffffff !important;
+  color: #1a1a1a !important;
+}
+
+body {
+  font-size: 11pt;
+  line-height: 1.75;
+}
+
+#content {
+  padding: 0;
+}
+
+#find-bar {
+  display: none !important;
+}
+
+mark.mb-hit,
+mark.mb-hit.mb-current {
+  background: none !important;
+  color: inherit !important;
+}
+
+h1, h2, h3, h4 {
+  break-after: avoid;
+  page-break-after: avoid;
+}
+
+table, pre, blockquote, img {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+a::after {
+  content: "";
+}

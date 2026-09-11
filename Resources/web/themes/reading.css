@@ -1,0 +1,65 @@
+/* reading.css —— 閱讀主題（預設）
+ *
+ * 借終端機的視覺語言，排版重做。深色底、霞鶩文楷、粗體＝橘色不加粗，
+ * 但標題改用字級與米白色分層 —— 全篇只有粗體是橘的，重點詞才有唯一性。
+ *
+ * 要自己做一套主題，複製這個檔到 ~/.config/markdownbrowser/themes/ 改。
+ * 選擇器一律掛在 :root[data-theme="<檔名>"] 上。
+ */
+
+:root[data-theme="reading"] {
+  --bg: #1c1c1c;
+  --fg: #cecece;
+  --accent: #dd9853;
+  --muted: #8a8a8a;
+  --rule: #3a3a3a;
+  --quote-bar: #757575;
+  --link: #7aa6d6;
+  --code-bg: #242424;
+
+  /* 比例版霞鶩文楷自帶拉丁字，中英數同一套筆觸。 */
+  --font-body: "LXGW WenKai TC", "LXGW WenKai Mono TC", serif;
+  --font-mono: "SF Mono", ui-monospace, monospace;
+  --line-height: 1.9;
+
+  --h1-size: 1.75em;
+  --h2-size: 1.4em;
+  --h3-size: 1.18em;
+  --h4-size: 1.05em;
+  --h1-color: #f2f2f2;
+  --h2-color: #ececec;
+  --h3-color: #e2e2e2;
+  --h4-color: #d8d8d8;
+  --th-fg: #ededed;
+}
+
+:root[data-theme="reading"] body {
+  /* 表格裡的金額縱向對齊。 */
+  font-variant-numeric: tabular-nums;
+}
+
+:root[data-theme="reading"] h1 {
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 0.4em;
+  margin-bottom: 1.2em;
+}
+
+:root[data-theme="reading"] h2 {
+  border-left: 3px solid var(--accent);
+  padding-left: 0.55em;
+  margin-left: -0.8em;
+}
+
+:root[data-theme="reading"] code {
+  background: var(--code-bg);
+  border-radius: 3px;
+  padding: 0.08em 0.35em;
+}
+
+:root[data-theme="reading"] th {
+  background: rgba(255, 255, 255, 0.035);
+}
+
+:root[data-theme="reading"] tbody tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.02);
+}

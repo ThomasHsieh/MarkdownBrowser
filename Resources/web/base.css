@@ -1,0 +1,198 @@
+/* base.css — 兩套主題共用的結構。顏色、字型一律由主題檔的變數決定。 */
+
+:root {
+  /* 主題必須提供的變數。這裡的值只是安全網，正常不會被用到。 */
+  --bg: #1c1c1c;
+  --fg: #cecece;
+  --accent: #dd9853;          /* 粗體用色，ghostty bold-color 的宣告值 */
+  --muted: #8a8a8a;
+  --rule: #3a3a3a;
+  --quote-bar: #757575;
+  --link: #7aa6d6;
+  --code-bg: #262626;
+
+  --font-body: system-ui, sans-serif;
+  --font-mono: "SF Mono", ui-monospace, monospace;
+  --font-size: 17px;
+  --line-height: 1.9;
+  --measure-padding: 3rem;
+
+  --h1-size: 1em;
+  --h2-size: 1em;
+  --h3-size: 1em;
+  --h4-size: 1em;
+  --h1-color: var(--fg);
+  --h2-color: var(--fg);
+  --h3-color: var(--fg);
+  --h4-color: var(--fg);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+body {
+  font-family: var(--font-body);
+  font-size: var(--font-size);
+  line-height: var(--line-height);
+  -webkit-font-smoothing: antialiased;
+  /* 絕不合成假粗體。粗體的訊號完全交給顏色。 */
+  font-synthesis-weight: none;
+  -webkit-font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  overflow-wrap: break-word;
+}
+
+#content {
+  /* 行寬隨視窗滿版，只留固定左右內距。 */
+  padding: 2.5rem var(--measure-padding) 12rem;
+}
+
+#content:empty::after {
+  content: "沒有開啟的檔案　⌘O";
+  display: block;
+  color: var(--muted);
+  text-align: center;
+  padding-top: 6rem;
+}
+
+/* ── 區塊 ───────────────────────────────────────────── */
+
+p { margin: 0 0 1.1em; }
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: normal;           /* 中文靠字級與顏色分層，不靠字重 */
+  line-height: 1.5;
+  margin: 2em 0 0.8em;
+  scroll-margin-top: 1.5rem;
+}
+h1:first-child, h2:first-child { margin-top: 0; }
+
+h1 { font-size: var(--h1-size); color: var(--h1-color); }
+h2 { font-size: var(--h2-size); color: var(--h2-color); }
+h3 { font-size: var(--h3-size); color: var(--h3-color); }
+h4, h5, h6 { font-size: var(--h4-size); color: var(--h4-color); }
+
+/* ★ 這個 App 存在的理由：粗體不加粗，只換色。 */
+strong, b {
+  font-weight: normal;
+  color: var(--accent);
+}
+
+em, i { font-style: italic; }
+
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+blockquote {
+  margin: 1.4em 0;
+  padding: 0 0 0 1.2em;
+  border-left: 2px solid var(--quote-bar);
+  color: var(--fg);
+  font-style: italic;
+}
+blockquote > :last-child { margin-bottom: 0; }
+
+ul, ol { margin: 0 0 1.1em; padding-left: 1.6em; }
+li { margin: 0.35em 0; }
+li > ul, li > ol { margin-bottom: 0; }
+
+hr {
+  border: 0;
+  border-top: 1px solid var(--rule);
+  margin: 2.4em 0;
+}
+
+img { max-width: 100%; height: auto; }
+
+/* ── 程式碼 ─────────────────────────────────────────── */
+
+code, kbd, samp {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+
+pre {
+  background: var(--code-bg);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 0.9em 1.1em;
+  overflow-x: auto;
+  margin: 1.4em 0;
+  line-height: 1.6;
+}
+pre code { font-size: 0.9em; background: none; padding: 0; }
+
+/* ── 表格 ───────────────────────────────────────────── */
+
+table {
+  border-collapse: collapse;
+  margin: 1.6em 0;
+  width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+th, td {
+  border: 1px solid var(--rule);
+  padding: 0.5em 0.9em;
+  text-align: left;
+  vertical-align: top;
+}
+th { font-weight: normal; color: var(--th-fg, var(--fg)); }
+
+/* ── 搜尋 ───────────────────────────────────────────── */
+
+mark.mb-hit {
+  background: rgba(221, 152, 83, 0.28);
+  color: inherit;
+  border-radius: 2px;
+}
+mark.mb-hit.mb-current {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+#find-bar {
+  position: fixed;
+  top: 0.6rem;
+  right: 0.9rem;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: var(--code-bg);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 0.35rem 0.5rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  font-family: var(--font-body);
+  font-size: 13px;
+}
+#find-bar[hidden] { display: none; }
+#find-input {
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  color: var(--fg);
+  font: inherit;
+  padding: 0.2rem 0.45rem;
+  width: 15rem;
+  outline: none;
+}
+#find-input:focus { border-color: var(--accent); }
+#find-count { color: var(--muted); min-width: 4.5rem; text-align: center; }
+#find-bar button {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 15px;
+  padding: 0 0.3rem;
+  line-height: 1;
+}
+#find-bar button:hover { color: var(--fg); }
