@@ -5,10 +5,11 @@
 //
 // 兩件事要做對，剩下交給系統工具：
 //
-// 1. 幾何。母圖是 1254 px、圓角方塊佔畫布 86.9%，但 macOS 的慣例是
-//    1024 畫布裡圓角方塊約 824 px（80.5%），四周留白給陰影。照原樣打包
-//    會比 Dock 上其他圖示大一圈。所以先用 alpha 量出方塊實際範圍，
-//    再等比縮放置中到標準比例。
+// 1. 幾何要滿版。傳統 macOS 圖示是 1024 畫布裡圓角方塊 824 px（80.5%），
+//    四周留白給陰影；但 macOS 26 會把這種舊格式圖示墊到系統自己的底板上，
+//    於是變成「板中板」—— Dock 裡看起來就是一塊淺灰底板中間放一個縮小的
+//    深色方塊，比鄰居小一圈。所以改成讓圓角方塊填滿整個畫布，
+//    圓角與陰影交給系統的遮罩處理。
 //
 // 2. 縮圖品質。母圖是 1254 px 的立體算圖，縮到 32–64 px 時 AppKit 的
 //    .high 內插明顯偏軟，在 LaunchBar 那種小圖清單裡看起來就糊。
@@ -31,13 +32,7 @@ guard let data = try? Data(contentsOf: source),
     exit(1)
 }
 
-/// macOS 圖示的標準比例：1024 的畫布，圓角方塊 824，四周各留 100 給陰影。
 let canvas = 1024.0
-
-/// 小尺寸的留白比例比大尺寸小 —— Apple 自己的圖示格線就是這樣，
-/// 16 pt 的方塊是 14/16，大尺寸才收到 824/1024。這台是非 Retina 的
-/// 3840×1080，1× 素材真的會被用到，多擠出來的那幾個像素有差。
-func tileRatio(for size: Int) -> Double { size <= 32 ? 14.0 / 16.0 : 824.0 / 1024.0 }
 
 /// 用 alpha 量出圓角方塊的實際範圍。母圖的陰影很貼邊，所以門檻取高一點，
 /// 量到的是不透明的本體而不是陰影。
@@ -63,8 +58,8 @@ let ciContext = CIContext(options: [.workingColorSpace: CGColorSpace(name: CGCol
 let masterCI = CIImage(bitmapImageRep: masterRep)!
 
 func render(_ size: Int) -> Data {
-    let target = Double(size) * tileRatio(for: size)
-    let k = target / max(bounds.width, bounds.height)
+    // 滿版：圓角方塊撐滿整個畫布。
+    let k = Double(size) / max(bounds.width, bounds.height)
 
     // Lanczos 而不是 AppKit 的 .high —— 後者在 32–64 px 這個區間明顯偏軟。
     let lanczos = CIFilter(name: "CILanczosScaleTransform")!
