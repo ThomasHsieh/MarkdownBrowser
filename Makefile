@@ -7,12 +7,19 @@ BUILD_DIR  := .build/release
 CACHE      := .cache/fonts
 INSTALL_TO := $(HOME)/Applications
 
-.PHONY: all build app fonts icons install run clean uninstall set-default status
+.PHONY: all build app fonts icons icon-assets install run clean uninstall set-default status
 
 all: app
 
 icons:
 	@CLANG_MODULE_CACHE_PATH="$(CURDIR)/.build/clang-module-cache" swift scripts/generate-icon.swift
+
+icon-assets:
+	@mkdir -p .build/icon-assets
+	@xcrun actool Resources/icons/AppIcon.icon --compile .build/icon-assets \
+		--output-format human-readable-text --app-icon AppIcon --include-all-app-icons \
+		--platform macosx --minimum-deployment-target 14.0 \
+		--output-partial-info-plist .build/icon-assets/Info.plist
 
 fonts:
 	@echo "→ 取字型"
@@ -22,13 +29,14 @@ build:
 	@echo "→ 編譯"
 	@swift build -c release --disable-sandbox
 
-app: fonts build
+app: fonts build icon-assets
 	@echo "→ 組 $(BUNDLE)"
 	@rm -rf "$(BUNDLE)"
 	@mkdir -p .build
 	@mkdir -p "$(BUNDLE)/Contents/MacOS" "$(BUNDLE)/Contents/Resources/web/fonts"
 	@cp Resources/Info.plist "$(BUNDLE)/Contents/Info.plist"
-	@cp Resources/icons/AppIcon.icns "$(BUNDLE)/Contents/Resources/AppIcon.icns"
+	@cp Resources/icons/AppIcon.icns "$(BUNDLE)/Contents/Resources/AppIcon-5.icns"
+	@cp .build/icon-assets/Assets.car "$(BUNDLE)/Contents/Resources/Assets.car"
 	@cp "$(BUILD_DIR)/$(APP)" "$(BUNDLE)/Contents/MacOS/$(APP)"
 	@cp -R Resources/web/. "$(BUNDLE)/Contents/Resources/web/"
 	@cp "$(CACHE)"/*.ttf "$(BUNDLE)/Contents/Resources/web/fonts/"

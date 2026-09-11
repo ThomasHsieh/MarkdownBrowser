@@ -9,13 +9,15 @@
 
 ## 建置
 
+需要 Xcode 26 或更新版本（使用 `actool` 編譯原生 Icon Composer 圖示資產）。
+
 ```bash
 make              # 取字型 → 編譯 → 組 .app → ad-hoc 簽章
 make install      # 裝到 ~/Applications 並向 LaunchServices 註冊
 make set-default  # 把 .md 的預設開啟程式設成這個 App
 make status       # 查 .md 目前的預設開啟程式是誰
 make run          # 建置後直接開
-make icons        # 由 Resources/icons/AppIcon-v2.png 重新產生圖示（通常不需執行）
+make icons        # 由 AppIcon-v4.png 重建透明書本圖層與 ICNS（通常不需執行）
 ```
 
 字型不進版控，`make` 時依序找 `~/books/fonts/` → `~/Library/Fonts/`
@@ -63,7 +65,7 @@ make icons        # 由 Resources/icons/AppIcon-v2.png 重新產生圖示（通�
 Sources/MarkdownBrowser/   SwiftUI 外殼：視窗、選單、檔案監聽、側欄
 Resources/web/             WKWebView 內容：markdown-it、base.css、兩套主題
 Resources/Info.plist       Finder 關聯與 UTI 宣告
-Resources/icons/           App 圖示：母圖、產生出來的 icns 與設計說明
+Resources/icons/           原生 AppIcon.icon、多尺寸 ICNS、母圖與設計說明
 ```
 
 Swift 端只做殼，所有排版都在 CSS 裡，所以換主題只是換一個 `data-theme` 屬性。
