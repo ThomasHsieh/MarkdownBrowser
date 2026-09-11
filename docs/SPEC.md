@@ -171,8 +171,17 @@ Swift 端只做「殼」——開檔、監聽、選單、側欄資料。所有�
 markdown-it 預設 CommonMark ＋ 打開 GFM 需要的：`tables`、`strikethrough`、
 `linkify`。`html: false`（心得檔沒有原生 HTML，關掉比較安全）。
 
-圖片支援本機相對路徑。WKWebView 用 `loadFileURL(_:allowingReadAccessTo:)`，
-`readAccessURL` 指向**檔案所在資料夾**，相對路徑圖片才讀得到。
+圖片支援本機相對路徑。網頁不是用 `file://` 載入的，而是自訂 scheme `mbres://` ——
+`loadFileURL(_:allowingReadAccessTo:)` 只能開放一個目錄樹，但同時要讀三個
+不相干的地方：App 自己的網頁資源、目前文件所在資料夾（相對路徑圖片）、
+以及 `~/.config/markdownbrowser/fonts`。
+
+    mbres://app/…       → Contents/Resources/web/…
+    mbres://doc/…       → 目前文件所在資料夾
+    mbres://userfont/…  → ~/.config/markdownbrowser/fonts
+
+渲染後由 JS 把相對路徑的 `img[src]` 改寫成 `mbres://doc/…`，否則它會相對於
+頁面位址解析到 App 自己的資源目錄去。handler 會擋掉用 `../` 逃出根目錄的請求。
 
 外部連結（`http`/`https`）用 `NSWorkspace` 丟給預設瀏覽器，不在 App 內導航。
 
@@ -219,7 +228,8 @@ MarkdownBrowser.app/Contents/
   Info.plist
   MacOS/MarkdownBrowser
   Resources/web/{index.html,app.js,base.css,themes/,vendor/}
-  Resources/fonts/*.ttf
+  Resources/web/fonts/*.ttf
+  Resources/{zh-Hant,en}.lproj/      宣告語言，標準選單才會跟系統變中文
 ```
 
 ad-hoc 簽章（`codesign --sign -`），第一次開可能要去
