@@ -1,7 +1,7 @@
 /* reading.css —— 閱讀主題（預設）
  *
  * 借終端機的視覺語言，排版重做。深色底、霞鶩文楷、粗體＝橘色不加粗，
- * 但標題改用字級與米白色分層 —— 全篇只有粗體是橘的，重點詞才有唯一性。
+ * 但標題改用字級與淺藍色分層 —— 全篇只有粗體是橘的，重點詞才有唯一性。
  *
  * 要自己做一套主題，複製這個檔到 ~/.config/markdownbrowser/themes/ 改。
  * 選擇器一律掛在 :root[data-theme="<檔名>"] 上。
@@ -26,10 +26,13 @@
   --h2-size: 1.4em;
   --h3-size: 1.18em;
   --h4-size: 1.05em;
-  --h1-color: #f2f2f2;
-  --h2-color: #ececec;
-  --h3-color: #e2e2e2;
-  --h4-color: #d8d8d8;
+  /* 標題一律淺藍，層級交給字級 —— 取樣自 MarkEdit 編輯區的標題色。
+     藍與橘在色相上離得夠遠，標題與重點詞不會互相混淆。 */
+  --heading: #a2d2fc;
+  --h1-color: var(--heading);
+  --h2-color: var(--heading);
+  --h3-color: var(--heading);
+  --h4-color: var(--heading);
   --th-fg: #ededed;
 }
 
@@ -45,7 +48,7 @@
 }
 
 :root[data-theme="reading"] h2 {
-  border-left: 3px solid var(--accent);
+  border-left: 3px solid var(--heading);
   padding-left: 0.55em;
   margin-left: -0.8em;
 }

@@ -20,6 +20,7 @@ final class AppState: ObservableObject {
     @Published private(set) var documentURL: URL?
     @Published private(set) var siblings: [URL] = []
     @Published private(set) var outline: [OutlineItem] = []
+    @Published private(set) var recentDocuments: [URL] = []
     @Published var activeHeadingID: String?
 
     // MARK: 外觀（都存進 UserDefaults）
@@ -58,12 +59,20 @@ final class AppState: ObservableObject {
         static let fontSize = "fontSize"
         static let sidebar = "sidebarVisible"
         static let lastDocument = "lastDocumentBookmark"
+        static let recents = "recentDocuments"
     }
+
+    /// 「最近開啟」保留幾筆。
+    static let recentLimit = 10
 
     private init() {
         theme = defaults.string(forKey: Keys.theme) ?? "reading"
         fontSize = defaults.object(forKey: Keys.fontSize) as? Double ?? 17
         sidebarVisible = defaults.object(forKey: Keys.sidebar) as? Bool ?? true
+
+        recentDocuments = (defaults.stringArray(forKey: Keys.recents) ?? [])
+            .map { URL(fileURLWithPath: $0) }
+            .filter { FileManager.default.fileExists(atPath: $0.path) }
 
         UserAssets.ensureDirectories()
         refreshThemes()
@@ -81,6 +90,7 @@ final class AppState: ObservableObject {
         documentURL = resolved
         defaults.set(resolved.path, forKey: Keys.lastDocument)
         NSDocumentController.shared.noteNewRecentDocumentURL(resolved)
+        pushRecent(resolved)
 
         bridge?.setDocumentDirectory(resolved.deletingLastPathComponent())
         refreshSiblings()
@@ -102,6 +112,22 @@ final class AppState: ObservableObject {
         panel.allowsMultipleSelection = false
         panel.directoryURL = documentURL?.deletingLastPathComponent()
         if panel.runModal() == .OK, let url = panel.url { open(url) }
+    }
+
+    /// 自己維護「最近開啟」，不靠 NSDocumentController —— 這不是文件型 App，
+    /// 系統那份清單管不到筆數上限，也不會把已刪掉的檔剔除。
+    private func pushRecent(_ url: URL) {
+        var list = recentDocuments.filter { $0.path != url.path }
+        list.insert(url, at: 0)
+        if list.count > Self.recentLimit { list.removeLast(list.count - Self.recentLimit) }
+        recentDocuments = list
+        defaults.set(list.map(\.path), forKey: Keys.recents)
+    }
+
+    func clearRecentDocuments() {
+        recentDocuments = []
+        defaults.removeObject(forKey: Keys.recents)
+        NSDocumentController.shared.clearRecentDocuments(nil)
     }
 
     func restoreLastDocument() {

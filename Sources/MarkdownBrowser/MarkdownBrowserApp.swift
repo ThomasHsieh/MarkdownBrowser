@@ -21,6 +21,17 @@ struct MarkdownBrowserApp: App {
         CommandGroup(replacing: .newItem) {
             Button("開啟…") { state.openPanel() }
                 .keyboardShortcut("o")
+
+            Menu("最近開啟") {
+                ForEach(state.recentDocuments, id: \.self) { url in
+                    Button(url.deletingPathExtension().lastPathComponent) { state.open(url) }
+                }
+                if !state.recentDocuments.isEmpty {
+                    Divider()
+                    Button("清除選單") { state.clearRecentDocuments() }
+                }
+            }
+            .disabled(state.recentDocuments.isEmpty)
         }
 
         CommandGroup(after: .newItem) {

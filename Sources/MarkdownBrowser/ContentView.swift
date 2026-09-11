@@ -15,6 +15,67 @@ struct ContentView: View {
         }
         .frame(minWidth: 640, minHeight: 420)
         .navigationTitle(state.documentURL?.lastPathComponent ?? "MarkdownBrowser")
+        .toolbar { toolbarItems }
+    }
+
+    /// 常用動作也放工具列。標題與圖示都給，使用者右鍵可以自己選要不要顯示文字。
+    @ToolbarContentBuilder
+    private var toolbarItems: some ToolbarContent {
+        ToolbarItemGroup(placement: .navigation) {
+            Button {
+                state.sidebarVisible.toggle()
+            } label: {
+                Label("側欄", systemImage: "sidebar.left")
+            }
+            .help("顯示或隱藏側欄　⌘\\")
+        }
+
+        ToolbarItemGroup(placement: .primaryAction) {
+            Menu {
+                Picker("主題", selection: Binding(get: { state.theme }, set: { state.theme = $0 })) {
+                    ForEach(state.themes) { theme in
+                        Text(theme.name).tag(theme.id)
+                    }
+                }
+                .pickerStyle(.inline)
+            } label: {
+                Label("主題", systemImage: "paintpalette")
+            }
+            .help("切換主題　⌘1 ⌘2")
+
+            ControlGroup {
+                Button { state.bumpFontSize(-1) } label: {
+                    Label("縮小文字", systemImage: "textformat.size.smaller")
+                }
+                Button { state.bumpFontSize(1) } label: {
+                    Label("放大文字", systemImage: "textformat.size.larger")
+                }
+            }
+            .help("調整字級　⌘+ ⌘-")
+
+            Button {
+                state.bridge?.openFind()
+            } label: {
+                Label("搜尋", systemImage: "magnifyingglass")
+            }
+            .help("在文件中搜尋　⌘F")
+
+            Button {
+                state.openInMarkEdit()
+            } label: {
+                Label("用 MarkEdit 開啟", systemImage: "square.and.pencil")
+            }
+            .help("用 MarkEdit 開啟　⌘E")
+            .disabled(state.documentURL == nil)
+
+            Button {
+                state.bridge?.printDocument()
+            } label: {
+                Label("列印", systemImage: "printer")
+            }
+            .help("列印或匯出 PDF　⌘P")
+            .disabled(state.documentURL == nil)
+        }
     }
 }
 
