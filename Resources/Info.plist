@@ -8,6 +8,8 @@
 	<string>MarkdownBrowser</string>
 	<key>CFBundleExecutable</key>
 	<string>MarkdownBrowser</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.thomashsieh.markdownbrowser</string>
 	<key>CFBundlePackageType</key>

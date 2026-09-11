@@ -7,9 +7,12 @@ BUILD_DIR  := .build/release
 CACHE      := .cache/fonts
 INSTALL_TO := $(HOME)/Applications
 
-.PHONY: all build app fonts install run clean uninstall set-default status
+.PHONY: all build app fonts icons install run clean uninstall set-default status
 
 all: app
+
+icons:
+	@CLANG_MODULE_CACHE_PATH="$(CURDIR)/.build/clang-module-cache" swift scripts/generate-icon.swift
 
 fonts:
 	@echo "→ 取字型"
@@ -25,6 +28,7 @@ app: fonts build
 	@mkdir -p .build
 	@mkdir -p "$(BUNDLE)/Contents/MacOS" "$(BUNDLE)/Contents/Resources/web/fonts"
 	@cp Resources/Info.plist "$(BUNDLE)/Contents/Info.plist"
+	@cp Resources/icons/AppIcon.icns "$(BUNDLE)/Contents/Resources/AppIcon.icns"
 	@cp "$(BUILD_DIR)/$(APP)" "$(BUNDLE)/Contents/MacOS/$(APP)"
 	@cp -R Resources/web/. "$(BUNDLE)/Contents/Resources/web/"
 	@cp "$(CACHE)"/*.ttf "$(BUNDLE)/Contents/Resources/web/fonts/"

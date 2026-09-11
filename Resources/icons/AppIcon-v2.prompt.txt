@@ -1,0 +1,9 @@
+Generated with the built-in image_gen tool.
+
+Use case: logo-brand
+Asset type: macOS application icon, square 1024x1024 PNG with transparent outer background.
+Primary request: Create one polished app icon for MarkdownBrowser, a native macOS Markdown reader focused on comfortable Chinese reading and warm orange highlights instead of bold text.
+Subject: A beautifully simplified open ivory book with a bold geometric Markdown M on the left page and a downward arrow on the right page, both warm amber orange #DD9853. Under these symbols, only two short understated reading strokes per page, one stroke highlighted orange.
+Style: Sophisticated native desktop icon, softly sculpted materials, subtle dimensional paper folds, crisp geometric silhouette, restrained premium craftsmanship. A dark graphite rounded-square tile with soft bevel and subtle shadow, ivory paper and warm orange accents. Front-facing, centered, balanced, generous breathing room, easily recognizable at small Dock sizes.
+Composition: Single icon fills about 88 percent of canvas, transparent padding outside rounded-square tile. Book fills central 65 percent, strong clear central fold, no complex perspective.
+Constraints: Only the M glyph and downward arrow, no app name or other lettering. No mockup, no surrounding desktop, no watermark, no extra objects, no photographic texture, no decorative sparkles. Actual transparent alpha outside icon. Output one finished image.
