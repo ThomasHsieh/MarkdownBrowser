@@ -96,6 +96,58 @@ for y in 0..<bh {
     }
 }
 
+/// 把深灰背景換成接近全平的底色。
+///
+/// 母圖的背景是從 #4D4F51 一路壓到 #0E1112 的大幅漸層，上緣偏亮、下緣是烘進去
+/// 的陰影，一小塊背景裡就有上千種顏色 —— 在 Dock 上看起來髒。原生圖示（例如
+/// Obsidian）的底幾乎是全平的 #1F1F1F→#191919。
+///
+/// 做法是把每一列最左邊的幾個像素當成「這一列的背景色」（書本置中，左緣一定是
+/// 背景），再依每個像素與它的差距決定要換掉多少：差距小＝背景，直接換成新底色；
+/// 差距大＝書本，原樣保留；中間平滑過渡，邊緣才不會出現鋸齒。書本落在紙面下方
+/// 的接觸陰影因為比背景暗得多，會被判定成內容而留下來。
+func flattenBackground() {
+    let top = (r: 32.0, g: 32.0, b: 32.0)     // #202020
+    let bottom = (r: 24.0, g: 24.0, b: 24.0)  // #181818
+
+    for y in 0..<bh {
+        let row = y * sRow
+
+        // 這一列的原背景色。取樣要避開最外緣 —— 方塊自己有一圈偏亮的鑲邊，
+        // 拿它當基準的話真正的背景反而會被判定成「內容」而保留下來。
+        // 書本大約從 x=78 才開始，所以 12–24 這一段是乾淨的背景。
+        var br = 0.0, bg2 = 0.0, bb = 0.0
+        for x in 12..<24 {
+            br += Double(sPix[row + x * 4])
+            bg2 += Double(sPix[row + x * 4 + 1])
+            bb += Double(sPix[row + x * 4 + 2])
+        }
+        br /= 12; bg2 /= 12; bb /= 12
+
+        // 新底色：幾乎全平的垂直漸層。
+        let t = Double(y) / Double(bh - 1)
+        let nr = top.r + (bottom.r - top.r) * t
+        let ng = top.g + (bottom.g - top.g) * t
+        let nb = top.b + (bottom.b - top.b) * t
+
+        for x in 0..<bw {
+            let i = row + x * 4
+            let pr = Double(sPix[i]), pg = Double(sPix[i + 1]), pb = Double(sPix[i + 2])
+            let d = max(abs(pr - br), max(abs(pg - bg2), abs(pb - bb)))
+
+            // 16 以下全換、44 以上全留，中間平滑。
+            var keep = (d - 16) / 28
+            keep = min(max(keep, 0), 1)
+            keep = keep * keep * (3 - 2 * keep)          // smoothstep
+
+            sPix[i]     = UInt8(min(255, max(0, (nr + (pr - nr) * keep).rounded())))
+            sPix[i + 1] = UInt8(min(255, max(0, (ng + (pg - ng) * keep).rounded())))
+            sPix[i + 2] = UInt8(min(255, max(0, (nb + (pb - nb) * keep).rounded())))
+        }
+    }
+}
+flattenBackground()
+
 let ciContext = CIContext(options: [.workingColorSpace: CGColorSpace(name: CGColorSpace.sRGB)!])
 let masterCI = CIImage(bitmapImageRep: squared)!
 
