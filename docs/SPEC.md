@@ -43,7 +43,7 @@ v1 要重現的就是這件事，外加一套排版比終端機更好的閱讀�
 SwiftUI（視窗、選單、Finder 關聯、檔案監聽、側欄）
         │  postMessage / evaluateJavaScript
         ▼
-WKWebView（內容區）
+WKWebView（內容區，一個視窗一份）
         │
         ├── markdown-it 14.x（內嵌，vendored，不走網路）
         ├── base.css ＋ themes/{terminal,reading}.css
@@ -52,6 +52,14 @@ WKWebView（內容區）
 
 Swift 端只做「殼」——開檔、監聽、選單、側欄資料。所有排版都在 CSS 裡，
 所以「兩套主題」只是換一個 `<html data-theme>` 屬性。
+
+Swift 端的狀態分三份（多視窗的緣故，見第 11 節）：
+
+| | 範圍 | 內容 |
+|---|---|---|
+| `DocumentState` | 一個視窗一份 | 讀哪個檔、側欄、主題、字體、字級、外觀 |
+| `AppSettings` | 全 App | 新視窗的起始設定、最近開啟、自訂主題目錄 |
+| `WindowRouter` | 全 App | 哪些視窗開著、哪一個在前景、下一個檔案開到哪裡 |
 
 - 專案：`~/workspace/MarkdownBrowser`
 - Bundle ID：`com.thomashsieh.markdownbrowser`
@@ -121,8 +129,10 @@ WCAG AA 為止：
 
 兩個踩過的坑：
 
-- 強制淺色／深色時要設 `NSApp.appearance`，否則只有網頁內容變色，
-  視窗外框（側欄、工具列、標題列）還是系統的。
+- 強制淺色／深色時要設 `NSWindow.appearance`，否則只有網頁內容變色，
+  視窗外框（側欄、工具列、標題列）還是系統的。設在 `NSApp` 也有效，
+  但那是全 App 的，一個視窗切淺色會把所有視窗一起拖下去 —— 外觀是
+  每個視窗各自的（第 11 節），所以要設在視窗上。
 - 跟隨系統時**不要用 KVO 盯 `NSApp.effectiveAppearance`** —— 它不保證 KVO
   相容，實測系統切換時不會觸發，結果是側欄自己變淺了、網頁內容還留在深色。
   要聽系統廣播的 `AppleInterfaceThemeChangedNotification`。
@@ -153,13 +163,14 @@ WCAG AA 為止：
 
 | 功能 | 快捷鍵 | 說明 |
 |---|---|---|
-| 開檔 | `Cmd O` | 也支援 Finder 雙點擊與拖放 |
+| 開新視窗 | `Cmd N` | 空白視窗，接著 `Cmd O` 或從側欄挑。Dock 圖示的右鍵選單也有 |
+| 開檔 | `Cmd O` | 換掉目前視窗的內容。Finder 雙點擊走另一套政策，見第 11 節 |
 | 最近開啟 | — | 檔案選單的子選單，最多 10 筆，自己存在 UserDefaults |
-| 切主題 | `Cmd 1` / `Cmd 2` | 閱讀／終端機，記住上次選的 |
-| 切字體 | `Cmd 3` / `Cmd 4` | 楷體／黑體，記住上次選的 |
-| 切外觀 | — | 自動／淺色／深色，記住上次選的 |
-| 調字級 | `Cmd +` `Cmd -` `Cmd 0` | 存進 UserDefaults |
-| 側欄 | `Cmd \` | 可收合 |
+| 切主題 | `Cmd 1` / `Cmd 2` | 閱讀／終端機。每個視窗各自，新視窗沿用最後一次的選擇 |
+| 切字體 | `Cmd 3` / `Cmd 4` | 楷體／黑體。同樣是每個視窗各自 |
+| 切外觀 | — | 自動／淺色／深色。同樣是每個視窗各自 |
+| 調字級 | `Cmd +` `Cmd -` `Cmd 0` | 每個視窗各自，最後一次的值存進 UserDefaults |
+| 側欄 | `Cmd \` | 可收合，每個視窗各自 |
 | 搜尋 | `Cmd F` | 全部命中高亮、顯示第 n／共 m、Enter 下一筆、Shift-Enter 上一筆 |
 | 用 MarkEdit 開啟 | `Cmd E` | `NSWorkspace.open(_:withApplicationAt:)` |
 | 列印／PDF | `Cmd P` | 白底黑字，粗體轉淺色模式那個 `#A2541A` |
@@ -275,8 +286,8 @@ markdown-it 預設 CommonMark ＋ 打開 GFM 需要的：`tables`、`strikethrou
 `~/Applications` 的那份才是唯一會被開到的；`set-default-app.swift` 也
 優先挑 `~/Applications` 而不是用 bundle ID 反查。
 
-開檔走 `NSApplicationDelegate.application(_:open:)`，一次開多個檔時只讀第一個
-（v1 沒有分頁）。
+開檔走 `NSApplicationDelegate.application(_:open:)`，一次開多個檔就開多個視窗，
+政策見第 11 節。
 
 ## 9. 建置與安裝
 
@@ -307,3 +318,78 @@ ad-hoc 簽章（`codesign --sign -`），第一次開可能要去
 
 private GitHub repo。`.gitignore` 排掉 `.build/`、`.cache/`、`*.app`、`Resources/fonts/*.ttf`。
 Commit 訊息用中文祈使句，比照 書庫 repo的習慣。
+
+---
+
+## 11. 視窗模型
+
+多視窗。一個視窗讀一個檔，關掉最後一個視窗就結束 App。
+
+### 11.1 狀態怎麼切
+
+單視窗版本只有一個 `AppState.shared`，所以 Finder 再開一個檔就把正在讀的那一份
+蓋掉。拆法是按「範圍」切，不是按功能切（見第 3 節的表）：
+
+- 一個視窗一份的東西放 `DocumentState` —— 讀哪個檔、側欄、主題、字體、字級、外觀
+- 跨視窗共用的放 `AppSettings` —— 新視窗的起始設定、最近開啟、自訂主題目錄
+- 「誰開著、誰在前景」放 `WindowRouter`
+
+**主題與字體是每個視窗各自的。** 並排比對兩套主題是這個 App 的實際用法，
+而「記住上次選的」仍然成立 —— 任何視窗改了設定就寫回 `AppSettings`，
+當下一個新視窗的起始值。
+
+**前景視窗用 `NSWindow` 的 key 通知自己記一份，不用 SwiftUI 的 focus。**
+選單要作用在前景視窗上，`⌘F` 的按鍵監聽也要找到前景視窗的 bridge，
+而 AppDelegate 與 `NSEvent` 監聽都在 SwiftUI 的 focus 環境之外拿不到。
+`WindowRouter.active` 是唯一的來源。它同時把前景視窗自己的變化轉發出去
+（`objectWillChange`），否則開了檔之後選單的啟用狀態不會重算。
+
+### 11.2 開檔的兩套政策
+
+| 入口 | 政策 |
+|---|---|
+| Finder 雙點擊、`open` 指令、拖到 Dock | **不動已經開著檔的視窗** |
+| `Cmd O`、最近開啟、側欄點擊 | 換掉前景視窗的內容 |
+
+Finder 那條依序試：已經有視窗在讀這個檔就帶到前景 → 還沒開檔的空白視窗載入它
+→ 都沒有才開新視窗。第一條讓重複雙點擊不會開出兩個一樣的視窗，第二條讓
+`Cmd N` 之後雙點擊不會多留一個空白視窗。
+
+選單那條維持單視窗時的語意 —— 那是使用者當下指定的動作，要另開一個就先 `Cmd N`。
+
+Dock 圖示右鍵的選單要自己給（`applicationDockMenu`）—— 那個選單不會自動抄
+App 的選單列，SwiftUI 的 `Commands` 只長在選單列上。目前只放「開新視窗」。
+
+### 11.3 SwiftUI 的三個坑
+
+都是實測踩到的，改動視窗相關的程式前先讀這一段。
+
+**`WindowGroup` 不要帶值。** `WindowGroup(for: T.self)` 看起來剛好可以用「這個
+視窗在讀哪個檔」當視窗的身分，但 SwiftUI 會把那個值存起來做視窗還原，而視窗內
+換檔時要把新值寫回 binding，寫回去又會被當成「請開一個新視窗」—— 於是視窗數
+每次啟動都往上加（實測乾淨啟動被還原成三個視窗，而且那份狀態清 UserDefaults
+也清不掉）。現在 `WindowGroup` 不帶值，「新視窗要讀哪個檔」由
+`WindowRouter.handoffs` 這個佇列交棒，新視窗的 `onAppear` 自己來取。
+
+**開檔會冒出空殼視窗。** App 每次收到開檔請求，SwiftUI 都會生一個視窗又馬上
+丟掉（帶著檔案啟動、以及執行中被 Finder 要求開檔都會）。被丟掉的那個只是內容
+被拆走，視窗本體還留在畫面上，就疊在真正的視窗底下 —— `isVisible` 與
+`orderedWindows` 都認為它在。把開檔處理全部停掉也一樣發生，所以這是 SwiftUI
+自己的行為。`WindowRouter.closeOrphanWindows` 負責收掉：只關「本來有
+`DocumentState`、現在沒有」的視窗，不掃全部視窗 —— 開檔對話框與關於視窗也
+都沒有 `DocumentState`，掃全部會把它們一起關掉。
+
+**而且那個空殼會半路把檔案接走。** 它在消失之前是個合法的「還沒開檔的空白
+視窗」，所以可能被挑去載入檔案，也可能先取走交棒佇列裡的檔 —— 兩種都會讓
+檔案跟著它一起消失，畫面上什麼都沒發生。實測空殼消失與開檔請求只差 2 ms，
+而視窗大、內容多的時候順序就會反過來（真的開不出來）。順序賭不起，所以
+`openFromFinder` 之後 0.4 秒回頭確認：沒有任何活著的視窗在讀那個檔就重開一次，
+最多三次。
+
+**一個視窗都還沒有的時候不要搶著開窗。** 帶著檔案啟動時，AppKit 會叫 SwiftUI
+收掉它預設開的那個視窗（啟動是為了開文件，不是為了開空白視窗），而 Finder 的
+開檔請求剛好落在那個空檔裡。這時自己開窗，就會跟 SwiftUI 接著補上的那個視窗
+撞成兩個。所以沒有視窗時先把檔案存起來，等下一個視窗出現再接手。
+
+還有一個時機問題：視窗掛上 SwiftUI 的過程中會呼叫 `WindowRouter.register`，
+在那裡直接開檔會撞進 SwiftUI 的更新週期，所以待開的檔要晚一個 runloop 才處理。

@@ -4,7 +4,7 @@ import WebKit
 
 struct WebPane: NSViewRepresentable {
 
-    @ObservedObject var state: AppState
+    @ObservedObject var state: DocumentState
 
     func makeCoordinator() -> Coordinator { Coordinator(state: state) }
 
@@ -41,10 +41,10 @@ struct WebPane: NSViewRepresentable {
         let schemeHandler = ResourceSchemeHandler()
         weak var webView: WKWebView?
 
-        private let state: AppState
+        private let state: DocumentState
         private var ready = false
 
-        init(state: AppState) {
+        init(state: DocumentState) {
             self.state = state
         }
 

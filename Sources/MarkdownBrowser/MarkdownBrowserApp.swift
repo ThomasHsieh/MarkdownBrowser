@@ -5,63 +5,72 @@ import SwiftUI
 struct MarkdownBrowserApp: App {
 
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
-    @ObservedObject private var state = AppState.shared
+    @ObservedObject private var settings = AppSettings.shared
+    @ObservedObject private var router = WindowRouter.shared
 
     var body: some Scene {
-        Window("MarkdownBrowser", id: "main") {
-            ContentView(state: state)
+        // 多視窗。WindowGroup 不帶值，開窗時要讀哪個檔由 WindowRouter 交棒。
+        WindowGroup(id: WindowRouter.windowID) {
+            DocumentWindow()
         }
         .defaultSize(width: 1080, height: 800)
         .commands { menus }
     }
 
+    /// 選單一律作用在前景視窗上。`router.active` 是唯一的來源 ——
+    /// SwiftUI 的 focus 環境在 AppDelegate 與按鍵監聽那邊拿不到。
     @CommandsBuilder
     private var menus: some Commands {
-        // 這是唯讀閱讀器，沒有「新增」這回事。
+        // 這是唯讀閱讀器，沒有「新增」這回事 —— 但有「開新視窗」。
         CommandGroup(replacing: .newItem) {
-            Button("開啟…") { state.openPanel() }
+            Button("開新視窗") { router.newWindow() }
+                .keyboardShortcut("n")
+
+            Button("開啟…") { router.openPanel() }
                 .keyboardShortcut("o")
 
             Menu("最近開啟") {
-                ForEach(state.recentDocuments, id: \.self) { url in
-                    Button(url.deletingPathExtension().lastPathComponent) { state.open(url) }
+                ForEach(settings.recentDocuments, id: \.self) { url in
+                    Button(url.deletingPathExtension().lastPathComponent) {
+                        router.openInActiveWindow(url)
+                    }
                 }
-                if !state.recentDocuments.isEmpty {
+                if !settings.recentDocuments.isEmpty {
                     Divider()
-                    Button("清除選單") { state.clearRecentDocuments() }
+                    Button("清除選單") { settings.clearRecentDocuments() }
                 }
             }
-            .disabled(state.recentDocuments.isEmpty)
+            .disabled(settings.recentDocuments.isEmpty)
         }
 
         CommandGroup(after: .newItem) {
             Divider()
-            Button("用 MarkEdit 開啟") { state.openInMarkEdit() }
+            Button("用 MarkEdit 開啟") { router.active?.openInMarkEdit() }
                 .keyboardShortcut("e")
-                .disabled(state.documentURL == nil)
-            Button("重新載入") { state.render(keepScroll: true) }
+                .disabled(!hasDocument)
+            Button("重新載入") { router.active?.render(keepScroll: true) }
                 .keyboardShortcut("r")
-                .disabled(state.documentURL == nil)
+                .disabled(!hasDocument)
         }
 
         CommandGroup(replacing: .printItem) {
-            Button("列印…") { state.bridge?.printDocument() }
+            Button("列印…") { router.active?.bridge?.printDocument() }
                 .keyboardShortcut("p")
-                .disabled(state.documentURL == nil)
+                .disabled(!hasDocument)
         }
 
         CommandGroup(after: .textEditing) {
-            Button("搜尋…") { state.bridge?.openFind() }
+            Button("搜尋…") { router.active?.bridge?.openFind() }
                 .keyboardShortcut("f")
-            Button("下一筆") { state.bridge?.findNext() }
+            Button("下一筆") { router.active?.bridge?.findNext() }
                 .keyboardShortcut("g")
-            Button("上一筆") { state.bridge?.findPrev() }
+            Button("上一筆") { router.active?.bridge?.findPrev() }
                 .keyboardShortcut("g", modifiers: [.command, .shift])
         }
 
         CommandGroup(after: .toolbar) {
-            Picker("主題", selection: Binding(get: { state.theme }, set: { state.theme = $0 })) {
-                ForEach(Array(state.themes.enumerated()), id: \.element.id) { index, theme in
+            Picker("主題", selection: activeBinding(\.theme, fallback: settings.theme)) {
+                ForEach(Array(settings.themes.enumerated()), id: \.element.id) { index, theme in
                     if index < 2 {
                         Text(theme.name).tag(theme.id)
                             .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")))
@@ -71,14 +80,14 @@ struct MarkdownBrowserApp: App {
                 }
             }
 
-            Picker("外觀", selection: Binding(get: { state.appearance }, set: { state.appearance = $0 })) {
-                ForEach(AppState.appearanceChoices, id: \.id) { choice in
+            Picker("外觀", selection: activeBinding(\.appearance, fallback: settings.appearance)) {
+                ForEach(AppSettings.appearanceChoices, id: \.id) { choice in
                     Text(choice.name).tag(choice.id)
                 }
             }
 
-            Picker("字體", selection: Binding(get: { state.fontFamily }, set: { state.fontFamily = $0 })) {
-                ForEach(Array(AppState.fontChoices.enumerated()), id: \.element.id) { index, choice in
+            Picker("字體", selection: activeBinding(\.fontFamily, fallback: settings.fontFamily)) {
+                ForEach(Array(AppSettings.fontChoices.enumerated()), id: \.element.id) { index, choice in
                     Text(choice.name).tag(choice.id)
                         .keyboardShortcut(KeyEquivalent(Character("\(index + 3)")))
                 }
@@ -86,25 +95,37 @@ struct MarkdownBrowserApp: App {
 
             Divider()
 
-            Button("放大文字") { state.bumpFontSize(1) }
+            Button("放大文字") { router.active?.bumpFontSize(1) }
                 .keyboardShortcut("+", modifiers: .command)
-            Button("縮小文字") { state.bumpFontSize(-1) }
+            Button("縮小文字") { router.active?.bumpFontSize(-1) }
                 .keyboardShortcut("-", modifiers: .command)
-            Button("實際大小") { state.resetFontSize() }
+            Button("實際大小") { router.active?.resetFontSize() }
                 .keyboardShortcut("0", modifiers: .command)
 
             Divider()
 
-            Button(state.sidebarVisible ? "隱藏側欄" : "顯示側欄") {
-                state.sidebarVisible.toggle()
+            Button(router.active?.sidebarVisible == false ? "顯示側欄" : "隱藏側欄") {
+                router.active?.sidebarVisible.toggle()
             }
             .keyboardShortcut("\\", modifiers: .command)
 
             Divider()
 
-            Button("開啟設定資料夾") { state.openConfigDirectory() }
-            Button("複製內建主題以供修改") { state.exportBuiltInThemes() }
+            Button("開啟設定資料夾") { settings.openConfigDirectory() }
+            Button("複製內建主題以供修改") { settings.exportBuiltInThemes() }
         }
+    }
+
+    private var hasDocument: Bool { router.active?.documentURL != nil }
+
+    /// 選單的 Picker 要綁在前景視窗的狀態上。沒有前景視窗時退回
+    /// AppSettings 記著的那一份（也就是下一個新視窗會用的值）。
+    private func activeBinding<T>(_ keyPath: ReferenceWritableKeyPath<DocumentState, T>,
+                                  fallback: T) -> Binding<T> {
+        Binding(
+            get: { router.active?[keyPath: keyPath] ?? fallback },
+            set: { router.active?[keyPath: keyPath] = $0 }
+        )
     }
 }
 
@@ -118,16 +139,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Finder 的開檔請求會在 didFinishLaunching 之後才送到，
         // 所以晚一步再決定要不要還原上次讀的檔。
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-            MainActor.assumeIsolated { AppState.shared.restoreLastDocument() }
+            MainActor.assumeIsolated { WindowRouter.shared.restoreLastDocumentIfIdle() }
         }
     }
 
+    /// Finder 雙點擊、`open` 指令、拖到 Dock 圖示都走這裡。
+    /// 一次給多個檔就開多個視窗，不再只讀第一個。
     func application(_ application: NSApplication, open urls: [URL]) {
-        guard let first = urls.first else { return }
-        MainActor.assumeIsolated { AppState.shared.open(first) }
+        MainActor.assumeIsolated { WindowRouter.shared.openFromFinder(urls) }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+
+    /// Dock 圖示右鍵的選單。
+    ///
+    /// 這個選單不會自動抄 App 的選單列，要自己給 —— SwiftUI 的 `Commands`
+    /// 只長在選單列上。目前只放「開新視窗」，跟 `⌘N` 同一條路。
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        let menu = NSMenu()
+        let item = NSMenuItem(title: "開新視窗", action: #selector(newWindowFromDock), keyEquivalent: "")
+        item.target = self
+        menu.addItem(item)
+        return menu
+    }
+
+    @objc private func newWindowFromDock() {
+        MainActor.assumeIsolated { WindowRouter.shared.newWindow() }
+    }
+
 
     /// ⌘F 與 ⌘G 自己攔，不靠選單項目的快捷鍵。
     ///
@@ -143,7 +182,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard flags.contains(.command), !flags.contains(.control) else { return event }
 
             return MainActor.assumeIsolated { () -> NSEvent? in
-                guard let bridge = AppState.shared.bridge else { return event }
+                // 多視窗：送給前景視窗的 bridge，而不是某個共用的單例。
+                guard let bridge = WindowRouter.shared.active?.bridge else { return event }
                 switch event.keyCode {
                 case 3:                                   // F
                     bridge.openFind()

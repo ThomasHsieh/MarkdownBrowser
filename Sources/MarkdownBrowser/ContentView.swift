@@ -2,7 +2,11 @@ import SwiftUI
 
 struct ContentView: View {
 
-    @ObservedObject var state: AppState
+    /// 這個視窗的狀態。主題、字體、字級都是視窗各自的。
+    @ObservedObject var state: DocumentState
+
+    /// 只用來拿主題清單（自訂主題的檔案集合是全 App 共用的）。
+    @ObservedObject var settings: AppSettings
 
     var body: some View {
         HSplitView {
@@ -32,8 +36,8 @@ struct ContentView: View {
 
         ToolbarItemGroup(placement: .primaryAction) {
             Menu {
-                Picker("主題", selection: Binding(get: { state.theme }, set: { state.theme = $0 })) {
-                    ForEach(state.themes) { theme in
+                Picker("主題", selection: $state.theme) {
+                    ForEach(settings.themes) { theme in
                         Text(theme.name).tag(theme.id)
                     }
                 }
@@ -41,8 +45,8 @@ struct ContentView: View {
 
                 Divider()
 
-                Picker("外觀", selection: Binding(get: { state.appearance }, set: { state.appearance = $0 })) {
-                    ForEach(AppState.appearanceChoices, id: \.id) { choice in
+                Picker("外觀", selection: $state.appearance) {
+                    ForEach(AppSettings.appearanceChoices, id: \.id) { choice in
                         Text(choice.name).tag(choice.id)
                     }
                 }
@@ -53,8 +57,8 @@ struct ContentView: View {
             .help("切換主題與明暗　⌘1 ⌘2")
 
             Menu {
-                Picker("字體", selection: Binding(get: { state.fontFamily }, set: { state.fontFamily = $0 })) {
-                    ForEach(AppState.fontChoices, id: \.id) { choice in
+                Picker("字體", selection: $state.fontFamily) {
+                    ForEach(AppSettings.fontChoices, id: \.id) { choice in
                         Text(choice.name).tag(choice.id)
                     }
                 }
@@ -102,7 +106,7 @@ struct ContentView: View {
 
 struct Sidebar: View {
 
-    @ObservedObject var state: AppState
+    @ObservedObject var state: DocumentState
 
     var body: some View {
         List {
