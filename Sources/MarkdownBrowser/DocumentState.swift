@@ -65,6 +65,31 @@ final class DocumentState: ObservableObject, Identifiable {
         didSet { settings.sidebarVisible = sidebarVisible }
     }
 
+    @Published var sidebarMode: SidebarMode {
+        didSet { settings.sidebarMode = sidebarMode }
+    }
+
+    // MARK: 標記
+    //
+    // 網頁端是標記資料的唯一真相，這裡只有側欄要的鏡像與 sidecar 檔的讀寫。
+
+    @Published private(set) var highlights: [HighlightItem] = []
+    @Published private(set) var sidecarExists = false
+
+    /// 唯讀的原因；`nil` 代表可以寫。資料夾不能寫、sidecar 讀不出來都會設。
+    @Published private(set) var highlightsReadOnly: String?
+
+    /// 最後一次讀到或寫入的 sidecar 內容。自己寫檔也會觸發資料夾的監聽，
+    /// 內容一樣就是自己的回音，不重新載入。
+    private var lastSidecarText: String?
+
+    /// 寫入失敗、還留在記憶體裡的內容。外層 Optional 是「有沒有待寫」，
+    /// 內層 `nil` 是「要刪檔」。
+    private var pendingSave: String??
+
+    /// 這個檔已經問過要不要認領孤兒 sidecar 了，同一次開啟不再問。
+    private var offeredOrphansFor: String?
+
     // MARK: 內部
 
     weak var bridge: WebBridge?
@@ -84,6 +109,7 @@ final class DocumentState: ObservableObject, Identifiable {
         fontFamily = settings.fontFamily
         fontSize = settings.fontSize
         sidebarVisible = settings.sidebarVisible
+        sidebarMode = settings.sidebarMode
     }
 
     // MARK: - 視窗
@@ -103,20 +129,31 @@ final class DocumentState: ObservableObject, Identifiable {
 
     // MARK: - 開檔
 
+    /// 一律經過 `WindowRouter.open(_:in:)` 進來，那裡保證一檔一窗。
     func open(_ url: URL) {
         let resolved = url.resolvingSymlinksInPath()
+        // 換檔前先把打到一半的註記寫進舊檔的 sidecar（訊息帶著舊路徑，見 saveHighlights）
+        if documentURL != nil { bridge?.commitNote { _ in } }
+        resolvePendingSave()
+
         documentURL = resolved
         settings.noteOpened(resolved)
+        highlights = []
+        offeredOrphansFor = nil
 
         bridge?.setDocumentDirectory(resolved.deletingLastPathComponent())
         refreshSiblings()
         render(keepScroll: false)
 
-        documentWatcher = FileWatcher(url: resolved) { [weak self] in
+        documentWatcher = FileWatcher(url: resolved, onRename: { [weak self] newURL in
+            self?.followRename(to: newURL)
+        }) { [weak self] in
             self?.render(keepScroll: true)
         }
+        // 資料夾的監聽同時負責 sidecar：git pull、checkout 都是換檔，會反映在資料夾上
         folderWatcher = FileWatcher(url: resolved.deletingLastPathComponent(), debounce: 0.3) { [weak self] in
             self?.refreshSiblings()
+            self?.reloadSidecarIfChanged()
         }
     }
 
@@ -127,13 +164,17 @@ final class DocumentState: ObservableObject, Identifiable {
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
         panel.directoryURL = documentURL?.deletingLastPathComponent()
-        if panel.runModal() == .OK, let url = panel.url { open(url) }
+        if panel.runModal() == .OK, let url = panel.url { WindowRouter.shared.open(url, in: self) }
     }
 
+    /// `keepScroll` 為真是重載同一份文件：標記沿用網頁端記憶體裡的（那才是唯一的真相），
+    /// 只重新比對錨點。為假是換了檔，才從 sidecar 讀進來。
     func render(keepScroll: Bool) {
         guard let url = documentURL else { return }
         guard let text = try? String(contentsOf: url, encoding: .utf8) else { return }
-        bridge?.render(markdown: text, keepScroll: keepScroll)
+        bridge?.render(markdown: text, keepScroll: keepScroll,
+                       highlights: keepScroll ? nil : loadSidecar(for: url))
+        if !keepScroll { offerOrphanSidecars(for: url) }
     }
 
     /// 網頁端載入完成後補送一次這個視窗目前的狀態。
@@ -163,6 +204,210 @@ final class DocumentState: ObservableObject, Identifiable {
     }
 
     func setOutline(_ items: [OutlineItem]) { outline = items }
+
+    // MARK: - 標記：sidecar 讀寫
+
+    /// 讀 sidecar，順便決定唯讀狀態與警示列。回傳要送給網頁端的內容。
+    private func loadSidecar(for url: URL) -> [String: Any] {
+        var json: String?
+        var banner: (String, [(String, String)])?
+        switch SidecarFile.read(for: url) {
+        case .none:
+            lastSidecarText = nil
+            highlightsReadOnly = SidecarFile.isWritable(for: url) ? nil : "此資料夾無法寫入，不能標記"
+        case .ok(let text):
+            lastSidecarText = text
+            json = text
+            highlightsReadOnly = SidecarFile.isWritable(for: url) ? nil : "此資料夾無法寫入，不能標記"
+        case .invalid(let reason):
+            // 記下壞檔的原文：同一份壞檔不會反覆觸發重新載入，修好之後內容一變就會
+            lastSidecarText = try? String(contentsOf: SidecarFile.url(for: url), encoding: .utf8)
+            highlightsReadOnly = reason
+            banner = (reason, [("reveal", "在 Finder 中顯示")])
+        }
+        sidecarExists = FileManager.default.fileExists(atPath: SidecarFile.url(for: url).path)
+        pendingSave = nil
+        if let banner { bridge?.setHighlightBanner(banner.0, actions: banner.1) }
+        else { bridge?.setHighlightBanner(nil, actions: []) }
+        return ["doc": url.path, "json": json ?? NSNull(),
+                "writable": highlightsReadOnly == nil, "reason": highlightsReadOnly ?? ""]
+    }
+
+    /// 網頁端送來的存檔請求。`doc` 是它當時在讀的檔 —— 換檔前最後一筆註記會晚一步才到，
+    /// 那時 `documentURL` 已經換了，要寫回它自己的 sidecar，不能寫到新檔去。
+    func saveHighlights(doc: String, json: String?) {
+        guard let url = documentURL, url.path == doc else {
+            // 舊檔已經不在（被改名、刪掉）就不寫，免得在原地生出孤兒；
+            // 舊的 sidecar 讀不出來（合併衝突）也不寫，絕不覆蓋
+            let old = URL(fileURLWithPath: doc)
+            guard FileManager.default.fileExists(atPath: old.path) else { return }
+            if case .invalid = SidecarFile.read(for: old) { return }
+            try? SidecarFile.write(json, for: old)
+            return
+        }
+        guard highlightsReadOnly == nil else { return }
+        do {
+            try SidecarFile.write(json, for: url)
+            lastSidecarText = json
+            sidecarExists = json != nil
+            if pendingSave != nil {
+                pendingSave = nil
+                bridge?.setHighlightBanner(nil, actions: [])
+            }
+        } catch {
+            // 不跳對話框：註記每 500 ms 寫一次，失敗時會連續轟炸。標記還在網頁端的記憶體裡，
+            // 下次有異動就會再送一次；關視窗時還沒寫進去才問（resolvePendingSave）。
+            pendingSave = .some(json)
+            bridge?.setHighlightBanner("標記無法儲存：\(error.localizedDescription)",
+                                       actions: [("retry", "重試")])
+        }
+    }
+
+    func setHighlights(doc: String, items: [HighlightItem]) {
+        guard documentURL?.path == doc else { return }
+        highlights = items
+    }
+
+    func handleBannerAction(_ id: String) {
+        switch id {
+        case "retry":
+            if let pending = pendingSave, let url = documentURL { saveHighlights(doc: url.path, json: pending) }
+        case "reveal":
+            revealSidecarInFinder()
+        default:
+            break
+        }
+    }
+
+    /// sidecar 被外部改動（git pull、checkout、手動修好合併衝突）就重新載入。
+    /// 跟自己最後寫的一樣就是回音，不理。
+    private func reloadSidecarIfChanged() {
+        guard let url = documentURL else { return }
+        let file = SidecarFile.url(for: url)
+        sidecarExists = FileManager.default.fileExists(atPath: file.path)
+        let current = try? String(contentsOf: file, encoding: .utf8)
+        guard current != lastSidecarText else { return }
+        bridge?.setHighlights(loadSidecar(for: url))
+    }
+
+    /// 關視窗、換檔、結束 App 時還有沒寫進去的標記：這是唯一會打斷你的時候，
+    /// 再不處理資料就真的沒了。
+    func resolvePendingSave() {
+        guard let pending = pendingSave, let url = documentURL else { return }
+        while true {
+            let alert = NSAlert()
+            alert.messageText = "有標記尚未儲存"
+            alert.informativeText = "「\(url.lastPathComponent)」的標記寫不進標記檔。"
+            alert.addButton(withTitle: "再試一次")
+            alert.addButton(withTitle: "拷貝為 JSON")
+            alert.addButton(withTitle: "放棄")
+            switch alert.runModal() {
+            case .alertFirstButtonReturn:
+                do {
+                    try SidecarFile.write(pending, for: url)
+                    pendingSave = nil
+                    return
+                } catch { continue }
+            case .alertSecondButtonReturn:
+                copyToPasteboard(pending ?? "")
+                pendingSave = nil
+                return
+            default:
+                pendingSave = nil
+                return
+            }
+        }
+    }
+
+    /// 視窗要關了：打到一半的註記用回傳值自己寫（網頁端的訊息可能來不及送到），
+    /// 還有沒寫進去的標記就問。
+    func prepareToClose() {
+        prepareToCloseAsync {}
+        resolvePendingSave()
+    }
+
+    func prepareToCloseAsync(_ done: @escaping () -> Void) {
+        guard let url = documentURL, highlightsReadOnly == nil, let bridge else { done(); return }
+        bridge.commitNote { [weak self] json in
+            if let json {
+                do { try SidecarFile.write(json, for: url); self?.lastSidecarText = json }
+                catch { self?.pendingSave = .some(json) }
+            }
+            done()
+        }
+    }
+
+    func revealSidecarInFinder() {
+        guard let url = documentURL else { return }
+        let file = SidecarFile.url(for: url)
+        guard FileManager.default.fileExists(atPath: file.path) else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([file])
+    }
+
+    func copyToPasteboard(_ text: String) {
+        let board = NSPasteboard.general
+        board.clearContents()
+        board.setString(text, forType: .string)
+    }
+
+    // MARK: - 標記：改名
+
+    /// App 開著時檔案被改名（多半是 AI 用 `git mv` 改了章名）：視窗跟到新檔，
+    /// sidecar 一起改名。這是「只有使用者動作才寫檔」唯一的例外 —— 它在跟上一個
+    /// 已經發生的改名，比留下孤兒乾淨。
+    private func followRename(to newURL: URL) {
+        guard let old = documentURL else { return }
+        let finish: (String?) -> Void = { [weak self] json in
+            guard let self else { return }
+            // 打到一半的註記先寫進舊的 sidecar，再整個搬過去
+            if let json, self.highlightsReadOnly == nil { try? SidecarFile.write(json, for: old) }
+            let from = SidecarFile.url(for: old), to = SidecarFile.url(for: newURL)
+            let fm = FileManager.default
+            if fm.fileExists(atPath: from.path), !fm.fileExists(atPath: to.path) {
+                try? fm.moveItem(at: from, to: to)
+            }
+            self.open(newURL)
+        }
+        if let bridge { bridge.commitNote(completion: finish) } else { finish(nil) }
+    }
+
+    /// 打開一個沒有 sidecar 的檔：同資料夾裡有「對應的檔已經不存在」的 sidecar，
+    /// 就拿它試比對目前的內容，過半數對得上才問要不要接上。
+    private func offerOrphanSidecars(for url: URL) {
+        guard offeredOrphansFor != url.path, let bridge else { return }
+        guard case .none = SidecarFile.read(for: url), highlightsReadOnly == nil else { return }
+        let candidates = SidecarFile.orphans(near: url)
+        guard !candidates.isEmpty else { return }
+        let byName = Dictionary(uniqueKeysWithValues: candidates.map { ($0.url.lastPathComponent, $0) })
+        bridge.probeHighlights(candidates.map { ["name": $0.url.lastPathComponent, "json": $0.json] }) { [weak self] results in
+            guard let self, self.documentURL == url else { return }
+            self.offeredOrphansFor = url.path
+            let best = results
+                .filter { $0.total > 0 && $0.matched * 2 > $0.total }
+                .max { Double($0.matched) / Double($0.total) < Double($1.matched) / Double($1.total) }
+            guard let best, let source = byName[best.name] else { return }
+
+            let alert = NSAlert()
+            alert.messageText = "找到 \(best.matched) 條可能屬於這個檔案的標記"
+            let stem = String(best.name.dropLast(SidecarFile.suffix.count))
+            alert.informativeText = "來自「\(stem)」（共 \(best.total) 條，對得上 \(best.matched) 條）。原檔可能被改名了，要接上嗎？"
+            alert.addButton(withTitle: "接上")
+            alert.addButton(withTitle: "不要")
+            let apply: (NSApplication.ModalResponse) -> Void = { response in
+                guard response == .alertFirstButtonReturn, self.documentURL == url else { return }
+                let target = SidecarFile.url(for: url)
+                guard !FileManager.default.fileExists(atPath: target.path) else { return }
+                do {
+                    try FileManager.default.moveItem(at: source.url, to: target)
+                    self.bridge?.setHighlights(self.loadSidecar(for: url))
+                } catch {
+                    self.bridge?.setHighlightBanner("無法接上標記檔：\(error.localizedDescription)", actions: [])
+                }
+            }
+            if let window = self.window { alert.beginSheetModal(for: window, completionHandler: apply) }
+            else { apply(alert.runModal()) }
+        }
+    }
 
     // MARK: - 字級
 
@@ -220,7 +465,6 @@ final class DocumentState: ObservableObject, Identifiable {
 /// Swift 對網頁端說話的介面，由 WebPane 的 Coordinator 實作。一個視窗一份。
 @MainActor
 protocol WebBridge: AnyObject {
-    func render(markdown: String, keepScroll: Bool)
     func setTheme(_ name: String)
     func setAppearance(_ mode: String)
     func setFontFamily(_ name: String)
@@ -233,4 +477,15 @@ protocol WebBridge: AnyObject {
     func findNext()
     func findPrev()
     func printDocument()
+
+    // 標記（docs/SPEC.md 12.8）
+    func render(markdown: String, keepScroll: Bool, highlights: [String: Any]?)
+    func setHighlights(_ payload: [String: Any])
+    func setHighlightBanner(_ text: String?, actions: [(String, String)])
+    func revealHighlight(_ id: String)
+    func deleteHighlight(_ id: String)
+    func highlightSelection(completion: @escaping (Bool) -> Void)
+    func commitNote(completion: @escaping (String?) -> Void)
+    func probeHighlights(_ candidates: [[String: String]],
+                         completion: @escaping ([(name: String, matched: Int, total: Int)]) -> Void)
 }

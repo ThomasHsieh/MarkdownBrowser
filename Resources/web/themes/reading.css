@@ -35,6 +35,14 @@
   --h3-color: var(--heading);
   --h4-color: var(--heading);
   --th-fg: #ededed;
+
+  /* 標記。避開橘（粗體、搜尋命中）與黃（疊在深底上會變成跟搜尋命中分不出來的橄欖褐）。 */
+  --hl-green: rgba(95, 184, 120, 0.24);
+  --hl-blue: rgba(95, 143, 208, 0.26);
+  --hl-purple: rgba(160, 124, 224, 0.28);
+  --hl-pink: rgba(224, 102, 143, 0.24);
+  --hl-underline: var(--fg);
+  --hl-accent: var(--accent);
 }
 
 :root[data-theme="reading"] body {
@@ -92,6 +100,15 @@
   --h3-color: var(--heading);
   --h4-color: var(--heading);
   --th-fg: #1f1f1f;
+
+  /* 標記底色要看得出來，粗體就得跟著壓深：#A2541A 疊在這些底色上只剩 4.1 左右，
+     壓到 #94481A 才全部回到 4.77 以上。仍是同一個橘、仍不加粗。 */
+  --hl-green: rgba(95, 184, 120, 0.30);
+  --hl-blue: rgba(95, 143, 208, 0.26);
+  --hl-purple: rgba(160, 124, 224, 0.26);
+  --hl-pink: rgba(224, 102, 143, 0.24);
+  --hl-underline: var(--fg);
+  --hl-accent: #94481a;
 }
 
 :root[data-theme="reading"][data-appearance="light"] th {

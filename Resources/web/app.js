@@ -90,6 +90,8 @@ window.MB = MB;
 MB.render = function (markdown, opts) {
   opts = opts || {};
   const anchor = opts.keepScroll ? captureAnchor() : null;
+  const hl = window.MBHighlights;
+  const kept = hl ? hl.beforeRender() : null;   // 換內容前先把標記位置寫回錨點欄位
 
   content.innerHTML = md.render(markdown);
   const outline = assignHeadingIds();
@@ -112,11 +114,14 @@ MB.render = function (markdown, opts) {
     }
   });
 
+  // 標記要在捲軸回位之前畫好：註記的小圓點會些微改變行寬
+  if (hl) hl.afterRender(opts.highlights, kept);
+  else if (findState.query) runFind(findState.query, false);
+
   if (anchor) restoreAnchor(anchor);
   else window.scrollTo(0, 0);
 
   toSwift({ type: 'outline', outline: outline });
-  if (findState.query) runFind(findState.query, false);
 };
 
 MB.setTheme = function (name) {
@@ -267,6 +272,12 @@ MB.closeFind = function () {
 };
 
 MB.findNext = function () { step(1); };
+
+/* 標記重畫時要先清掉搜尋命中、畫完再補回來（見 highlights.js 的 paint）。 */
+MB.internal = {
+  clearHits,
+  rerunFind() { if (findState.query) runFind(findState.query, false); },
+};
 MB.findPrev = function () { step(-1); };
 
 findInput.addEventListener('input', () => runFind(findInput.value, true));

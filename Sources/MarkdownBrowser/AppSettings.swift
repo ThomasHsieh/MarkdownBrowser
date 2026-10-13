@@ -41,6 +41,10 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(sidebarVisible, forKey: Keys.sidebar) }
     }
 
+    var sidebarMode: SidebarMode {
+        didSet { defaults.set(sidebarMode.rawValue, forKey: Keys.sidebarMode) }
+    }
+
     /// 上次讀的檔。啟動時若沒有 Finder 指定的檔案，就還原這一份。
     var lastDocumentURL: URL? {
         guard let path = defaults.string(forKey: Keys.lastDocument),
@@ -77,6 +81,7 @@ final class AppSettings: ObservableObject {
         static let fontFamily = "fontFamily"
         static let appearance = "appearance"
         static let sidebar = "sidebarVisible"
+        static let sidebarMode = "sidebarMode"
         static let lastDocument = "lastDocumentBookmark"
         static let recents = "recentDocuments"
     }
@@ -87,6 +92,7 @@ final class AppSettings: ObservableObject {
         fontFamily = defaults.string(forKey: Keys.fontFamily) ?? "kai"
         fontSize = defaults.object(forKey: Keys.fontSize) as? Double ?? Self.defaultFontSize
         sidebarVisible = defaults.object(forKey: Keys.sidebar) as? Bool ?? true
+        sidebarMode = SidebarMode(rawValue: defaults.string(forKey: Keys.sidebarMode) ?? "") ?? .outline
 
         recentDocuments = (defaults.stringArray(forKey: Keys.recents) ?? [])
             .map { URL(fileURLWithPath: $0) }

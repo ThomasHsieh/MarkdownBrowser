@@ -34,6 +34,7 @@ SwiftUI（視窗、選單、Finder 關聯、檔案監聽、側欄）
         │  webkit.messageHandlers.mb.postMessage({type, …})  ↑
         ▼
 WKWebView（內容區：markdown-it + base.css + themes/*.css，一個視窗一份）
+        └── highlights.js：標記與註記（docs/SPEC.md 第 12 節）
 ```
 
 Swift 端只做殼，**所有排版都在 CSS 裡**。切主題只是換 `<html>` 上一個
@@ -51,12 +52,30 @@ Swift 端只做殼，**所有排版都在 CSS 裡**。切主題只是換 `<html>
   並推給自己那個視窗的網頁端，沒有其他同步路徑
 - `WebBridge` protocol 是 Swift → JS 的唯一介面，由 `WebPane.Coordinator` 實作，
   一個視窗一份
-- JS → Swift 只有四種訊息：`ready`、`outline`、`activeHeading`、`openExternal`
+- JS → Swift 有八種訊息：`ready`、`outline`、`activeHeading`、`openExternal`，
+  以及標記的 `highlights`、`saveHighlights`、`copy`、`bannerAction`。需要回傳值的
+  呼叫（`highlightSelection`、`commitNote`、`probeHighlights`）用 `evaluateJavaScript`
+  的完成回呼拿，不另外設計訊息
 - **選單與按鍵監聽一律作用在 `WindowRouter.active` 上。** SwiftUI 的 focus 環境在
   `AppDelegate` 與 `NSEvent` 監聽那邊拿不到，所以前景視窗自己用 `NSWindow` 的
   key 通知記一份，來源唯一
 - 開檔有兩套政策：Finder 走 `openFromFinder`（**不動已經開著檔的視窗**），
   選單與側欄走 `openInActiveWindow`（換掉前景視窗）。細節見 `docs/SPEC.md` 第 11 節
+- **一檔一窗**：同一個檔只會開在一個視窗裡，視窗內換檔一律走
+  `WindowRouter.open(_:in:)`，不要直接呼叫 `DocumentState.open`。每個視窗的網頁端
+  各自是標記資料的唯一真相，同一個檔開兩份就會互相覆蓋 sidecar
+
+### 標記
+
+**網頁端（`highlights.js`）是標記資料的唯一真相**，Swift 只負責讀寫 sidecar 檔
+（`<原檔名>_highlights.json`）與鏡像給側欄。合併、擦除、錨點比對都需要渲染後的
+文字位置，只有網頁端拿得到。完整規格在 `docs/SPEC.md` 第 12 節，三條最容易被改壞的：
+
+- **只有使用者的動作才寫檔**。打開、重載、重新比對、發現對不上都不寫，否則唯讀
+  閱讀器光是打開來看就會在 git 裡留下變動。唯一的例外是跟著 `.md` 改名
+- **sidecar 讀不出來（合併衝突、版本太新）一律唯讀、絕不覆蓋**
+- 錨點是引文（exact／prefix／suffix／heading），**不存偏移量**。重載同一份文件時
+  `render` 不帶 `highlights`，網頁端沿用記憶體裡的標記重新比對
 
 ### 三個正交的軸
 
@@ -89,8 +108,10 @@ Swift 端只做殼，**所有排版都在 CSS 裡**。切主題只是換 `<html>
 ## 改動時的連動點
 
 - **新增 bridge 方法**：三處要一起改 —— `DocumentState.swift` 底部的 `WebBridge`
-  protocol、`WebPane.Coordinator` 的實作、`app.js` 的 `MB.xxx`
-- **新增主題 CSS 變數**：`base.css` 的 `:root` 補安全網值，兩個主題檔都要提供
+  protocol、`WebPane.Coordinator` 的實作、`app.js` 的 `MB.xxx`（標記相關的在
+  `highlights.js`）
+- **新增主題 CSS 變數**：`base.css` 的 `:root` 補安全網值，兩個主題檔都要提供。
+  標記的 `--hl-*` 也一樣，淺色模式那組要另外驗算標記內粗體（`--hl-accent`）的對比
 - **改主題顏色**：淺色覆寫寫在**各自的主題檔裡**（
   `:root[data-theme="X"][data-appearance="light"]`），不集中在 `base.css` ——
   這樣主題檔仍然自給自足，自訂主題複製一份就能改
@@ -99,7 +120,7 @@ Swift 端只做殼，**所有排版都在 CSS 裡**。切主題只是換 `<html>
 - **新增選單項目**：`MarkdownBrowserApp.swift` 的 `menus`，動作對象是
   `router.active`（Picker 用 `activeBinding(_:fallback:)`）；工具列在
   `ContentView.swift` 的 `toolbarItems`，直接用自己視窗的 `state`。
-  `⌘N`、`⌘O`、`⌘1`–`⌘4` 已被佔用
+  `⌘N`、`⌘O`、`⌘1`–`⌘4`、`⇧⌘H` 已被佔用
 
 ## 踩過的坑（改到附近時別踩回去）
 
@@ -137,6 +158,11 @@ Swift 端只做殼，**所有排版都在 CSS 裡**。切主題只是換 `<html>
   載入檔案或取走交棒佇列裡的檔，檔案就跟著它一起消失（實測只差 2 ms，視窗一大
   順序就反過來）。所以 `openFromFinder` 之後要回頭確認真的開在活著的視窗裡，
   沒有就重開 —— 別把這段拿掉
+- `FileWatcher` 收到 `.rename` 時要**趁 fd 還開著**用 `fcntl(F_GETPATH)` 問新路徑，
+  再晚一點確認舊路徑沒有又出現 —— 那是編輯器的原子存檔，不是改名
+- **測試建置版時別跟安裝版混在一起**：兩份是同一個 bundle ID，也共用同一組
+  UserDefaults。`open -n` 開測試版會把測試檔寫進「最近開啟」與「上次讀的檔」；
+  用 bundle ID 帶到前景的工具（UI 自動化的前景模式、`⌘Q`）可能作用到安裝版
 - **一個視窗都沒有時不要搶著開窗**，先存起來等 SwiftUI 那個視窗出現再接手；
   `register` 裡待開的檔要晚一個 runloop 處理，否則撞進 SwiftUI 的更新週期
 

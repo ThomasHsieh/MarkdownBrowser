@@ -30,6 +30,14 @@
   --h2-color: var(--accent);
   --h3-color: var(--accent);
   --h4-color: var(--accent);
+
+  /* 標記：與閱讀主題同一組（底色相同）。 */
+  --hl-green: rgba(95, 184, 120, 0.24);
+  --hl-blue: rgba(95, 143, 208, 0.26);
+  --hl-purple: rgba(160, 124, 224, 0.28);
+  --hl-pink: rgba(224, 102, 143, 0.24);
+  --hl-underline: var(--fg);
+  --hl-accent: var(--accent);
 }
 
 :root[data-theme="terminal"] h1,
@@ -83,4 +91,12 @@
   --h3-color: var(--accent);
   --h4-color: var(--accent);
   --th-fg: var(--fg);
+
+  /* 標記內的粗體壓深一級，理由同閱讀主題的淺色模式。 */
+  --hl-green: rgba(95, 184, 120, 0.30);
+  --hl-blue: rgba(95, 143, 208, 0.26);
+  --hl-purple: rgba(160, 124, 224, 0.26);
+  --hl-pink: rgba(224, 102, 143, 0.24);
+  --hl-underline: var(--fg);
+  --hl-accent: #94481a;
 }

@@ -48,6 +48,8 @@ struct MarkdownBrowserApp: App {
             Button("用 MarkEdit 開啟") { router.active?.openInMarkEdit() }
                 .keyboardShortcut("e")
                 .disabled(!hasDocument)
+            Button("在 Finder 中顯示標記檔") { router.active?.revealSidecarInFinder() }
+                .disabled(!(router.active?.sidecarExists ?? false))
             Button("重新載入") { router.active?.render(keepScroll: true) }
                 .keyboardShortcut("r")
                 .disabled(!hasDocument)
@@ -66,6 +68,14 @@ struct MarkdownBrowserApp: App {
                 .keyboardShortcut("g")
             Button("上一筆") { router.active?.bridge?.findPrev() }
                 .keyboardShortcut("g", modifiers: [.command, .shift])
+
+            Divider()
+
+            // 實際由 AppDelegate 的按鍵監聽攔（同 ⌘F），這裡顯示快捷鍵、給滑鼠用。
+            // 永遠可按：要在沒選取時變灰，網頁端就得每次選取改變都通知，不划算。
+            Button("標記選取文字") { AppDelegate.highlightSelection() }
+                .keyboardShortcut("h", modifiers: [.command, .shift])
+                .disabled(!hasDocument)
         }
 
         CommandGroup(after: .toolbar) {
@@ -109,6 +119,11 @@ struct MarkdownBrowserApp: App {
             }
             .keyboardShortcut("\\", modifiers: .command)
 
+            Picker("側欄", selection: activeBinding(\.sidebarMode, fallback: settings.sidebarMode)) {
+                Text("大綱").tag(SidebarMode.outline)
+                Text("標記").tag(SidebarMode.highlights)
+            }
+
             Divider()
 
             Button("開啟設定資料夾") { settings.openConfigDirectory() }
@@ -151,6 +166,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
+    /// 結束前先把每個視窗打到一半的註記寫入，還有沒寫進去的標記就問。
+    /// `Cmd Q` 不一定會讓視窗收到 willClose，所以不能只靠關窗那條路。
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        MainActor.assumeIsolated {
+            let documents = WindowRouter.shared.documents.filter { $0.documentURL != nil }
+            guard !documents.isEmpty else { return .terminateNow }
+            var remaining = documents.count
+            var replied = false
+            let finish = {
+                guard !replied else { return }
+                replied = true
+                documents.forEach { $0.resolvePendingSave() }
+                NSApp.reply(toApplicationShouldTerminate: true)
+            }
+            for document in documents {
+                document.prepareToCloseAsync {
+                    remaining -= 1
+                    if remaining == 0 { finish() }
+                }
+            }
+            // 網頁端沒回應也不能卡住結束
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { MainActor.assumeIsolated { finish() } }
+            return .terminateLater
+        }
+    }
+
+    @MainActor
+    static func highlightSelection() {
+        WindowRouter.shared.active?.bridge?.highlightSelection { ok in
+            if !ok { NSSound.beep() }
+        }
+    }
+
     /// Dock 圖示右鍵的選單。
     ///
     /// 這個選單不會自動抄 App 的選單列，要自己給 —— SwiftUI 的 `Commands`
@@ -190,6 +238,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     return nil
                 case 5:                                   // G
                     if flags.contains(.shift) { bridge.findPrev() } else { bridge.findNext() }
+                    return nil
+                case 4 where flags.contains(.shift):      // Shift-H；沒有 Shift 的 ⌘H 是系統的隱藏
+                    AppDelegate.highlightSelection()
                     return nil
                 default:
                     return event

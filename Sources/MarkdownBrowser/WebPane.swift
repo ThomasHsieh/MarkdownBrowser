@@ -80,6 +80,22 @@ struct WebPane: NSViewRepresentable {
                     state.openExternal(url)
                 }
 
+            case "highlights":
+                let raw = body["items"] as? [[String: Any]] ?? []
+                state.setHighlights(doc: body["doc"] as? String ?? "", items: raw.compactMap(HighlightItem.init))
+
+            case "saveHighlights":
+                // json 是 null 代表標記全刪光了，要刪檔
+                guard let doc = body["doc"] as? String else { return }
+                state.saveHighlights(doc: doc, json: body["json"] as? String)
+
+            case "copy":
+                // 不用 navigator.clipboard：網頁從自訂的 mbres:// 載入，WebKit 不一定當它是安全來源
+                if let text = body["text"] as? String { state.copyToPasteboard(text) }
+
+            case "bannerAction":
+                if let id = body["id"] as? String { state.handleBannerAction(id) }
+
             default:
                 break
             }
@@ -99,9 +115,64 @@ struct WebPane: NSViewRepresentable {
             return String(json.dropFirst().dropLast())
         }
 
-        func render(markdown: String, keepScroll: Bool) {
+        /// 任意 JSON 值變成 JS 字面值。
+        private func json(_ value: Any) -> String {
+            guard let data = try? JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed]),
+                  let text = String(data: data, encoding: .utf8) else { return "null" }
+            return text
+        }
+
+        /// 標記跟內文在同一次呼叫裡送進去，畫面上不會先閃一下沒畫線的版本。
+        /// `highlights` 為 nil 是重載同一份文件：網頁端沿用記憶體裡的標記。
+        func render(markdown: String, keepScroll: Bool, highlights: [String: Any]?) {
             guard ready else { return }
-            eval("MB.render(\(literal(markdown)), {keepScroll: \(keepScroll)})")
+            let extra = highlights.map { ", highlights: \(json($0))" } ?? ""
+            eval("MB.render(\(literal(markdown)), {keepScroll: \(keepScroll)\(extra)})")
+        }
+
+        func setHighlights(_ payload: [String: Any]) {
+            guard ready else { return }
+            eval("MB.setHighlights(\(json(payload)))")
+        }
+
+        func setHighlightBanner(_ text: String?, actions: [(String, String)]) {
+            guard ready else { return }
+            let list = actions.map { ["id": $0.0, "label": $0.1] }
+            eval("MB.setHighlightBanner(\(text.map(literal) ?? "null"), \(json(list)))")
+        }
+
+        func revealHighlight(_ id: String) { eval("MB.revealHighlight(\(literal(id)))") }
+        func deleteHighlight(_ id: String) { eval("MB.deleteHighlight(\(literal(id)))") }
+
+        func highlightSelection(completion: @escaping (Bool) -> Void) {
+            guard ready, let webView else { completion(false); return }
+            webView.evaluateJavaScript("MB.highlightSelection()") { result, _ in
+                completion(result as? Bool ?? false)
+            }
+        }
+
+        /// 回傳寫入的 sidecar 內容。關窗、改名時網頁端可能來不及把訊息送到，
+        /// Swift 拿這個回傳值自己寫。
+        func commitNote(completion: @escaping (String?) -> Void) {
+            guard ready, let webView else { completion(nil); return }
+            webView.evaluateJavaScript("MB.commitNote()") { result, _ in
+                completion(result as? String)
+            }
+        }
+
+        func probeHighlights(_ candidates: [[String: String]],
+                             completion: @escaping ([(name: String, matched: Int, total: Int)]) -> Void) {
+            // 網頁端還沒準備好就不回呼：開檔時會先走一次這裡，等 ready 之後的那次渲染才真的問
+            guard ready, let webView else { return }
+            webView.evaluateJavaScript("MB.probeHighlights(\(json(candidates)))") { result, _ in
+                let rows = result as? [[String: Any]] ?? []
+                completion(rows.compactMap { row in
+                    guard let name = row["name"] as? String,
+                          let matched = row["matched"] as? Int,
+                          let total = row["total"] as? Int else { return nil }
+                    return (name, matched, total)
+                })
+            }
         }
 
         func setTheme(_ name: String) { eval("MB.setTheme(\(literal(name)))") }
