@@ -277,6 +277,16 @@ markdown-it 預設 CommonMark ＋ 打開 GFM 需要的：`tables`、`strikethrou
 `public.markdown` 與副檔名 `md`/`markdown`/`mdown`/`mkd`，
 `LSHandlerRank` 設 `Owner`，角色 `Viewer`。
 
+`.mdown`／`.mkd`／`.mdwn` 另外宣告一個本 App 擁有的類型
+`com.thomashsieh.markdownbrowser.markdown-variant`（`UTExportedTypeDeclarations`，
+掛在 `net.daringfireball.markdown` 底下）。只在匯入的 `net.daringfireball.markdown`
+裡多列這三個副檔名沒有用：匯入宣告的優先序最低，那個 UTI 已經有更權威的宣告，
+多列的副檔名被忽略，三者變成動態類型，實測被 Notion、VS Code 搶走。
+
+`public.markdown` 雖然列在 `LSItemContentTypes` 裡，但 `make set-default` 不設它：
+它在系統上是個沒有上層類型的空殼，沒有任何副檔名對應到它，`NSWorkspace` 與
+LaunchServices 都拒絕替它設預設程式，設了也不影響任何檔案。
+
 `Info.plist` 裡宣告 `Owner` 只代表「我有能力開」，不等於預設程式 ——
 真正的預設是使用者層級的設定。`make set-default` 會呼叫
 `NSWorkspace.setDefaultApplication(at:toOpen:)` 明確指定，

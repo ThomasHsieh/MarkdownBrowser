@@ -64,6 +64,34 @@
 		</dict>
 	</array>
 
+	<!-- .mdown／.mkd／.mdwn 自己宣告一個類型。上面那份匯入的 net.daringfireball.markdown
+	     雖然也列了這三個副檔名，但匯入宣告的優先序最低，那個 UTI 已經有更權威的宣告，
+	     多列的副檔名會被忽略 —— 結果三者都變成動態類型，被 Notion、VS Code 搶走。
+	     識別碼是本 App 的，所以用 exported 而不是 imported。 -->
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.thomashsieh.markdownbrowser.markdown-variant</string>
+			<key>UTTypeDescription</key>
+			<string>Markdown</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>net.daringfireball.markdown</string>
+				<string>public.plain-text</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>mdown</string>
+					<string>mkd</string>
+					<string>mdwn</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
+
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
@@ -76,6 +104,7 @@
 			<key>LSItemContentTypes</key>
 			<array>
 				<string>net.daringfireball.markdown</string>
+				<string>com.thomashsieh.markdownbrowser.markdown-variant</string>
 				<string>public.markdown</string>
 			</array>
 			<key>CFBundleTypeExtensions</key>

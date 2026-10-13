@@ -13,9 +13,12 @@ import UniformTypeIdentifiers
 
 let bundleID = "com.thomashsieh.markdownbrowser"
 
+// 不含 public.markdown：它在系統上是個沒有上層類型的空殼（不屬於 public.data），
+// 沒有任何副檔名對應到它，NSWorkspace 與 LaunchServices 都拒絕替它設預設程式
+// （"The file couldn’t be opened" ／ -50）—— 留著只會讓這支腳本每次都以錯誤結束。
 let typeIDs = [
-    "net.daringfireball.markdown",   // 通用的 Markdown UTI，.md 實際掛在這個底下
-    "public.markdown",
+    "net.daringfireball.markdown",   // 通用的 Markdown UTI，.md 與 .markdown 掛在這個底下
+    "com.thomashsieh.markdownbrowser.markdown-variant",   // .mdown／.mkd／.mdwn，Info.plist 自己宣告的
     "net.ia.markdown",
 ]
 
