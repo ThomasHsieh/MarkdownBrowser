@@ -132,10 +132,17 @@ final class DocumentState: ObservableObject, Identifiable {
     /// 一律經過 `WindowRouter.open(_:in:)` 進來，那裡保證一檔一窗。
     func open(_ url: URL) {
         let resolved = url.resolvingSymlinksInPath()
-        // 換檔前先把打到一半的註記寫進舊檔的 sidecar（訊息帶著舊路徑，見 saveHighlights）
-        if documentURL != nil { bridge?.commitNote { _ in } }
-        resolvePendingSave()
+        // 換檔前先把打到一半的註記寫進舊檔的 sidecar，寫完（或寫不進去、問過了）才換。
+        // 不能只發出 commitNote 就往下走：寫入結果晚一步才回來，那時 documentURL
+        // 已經換掉，失敗就沒有地方可以出警示。離開一份文件等同關掉它。
+        guard documentURL != nil else { performOpen(resolved); return }
+        prepareToCloseAsync { [self] in
+            resolvePendingSave()
+            performOpen(resolved)
+        }
+    }
 
+    private func performOpen(_ resolved: URL) {
         documentURL = resolved
         settings.noteOpened(resolved)
         highlights = []
@@ -322,16 +329,24 @@ final class DocumentState: ObservableObject, Identifiable {
     /// 視窗要關了：打到一半的註記用回傳值自己寫（網頁端的訊息可能來不及送到），
     /// 還有沒寫進去的標記就問。
     func prepareToClose() {
-        prepareToCloseAsync {}
-        resolvePendingSave()
+        // 要等 commitNote 的回呼：最後一筆註記是在回呼裡才寫的，寫入失敗也是那時才知道。
+        // 閉包強持有 self，視窗關了這份狀態也還活著；網頁端沒回應就 1.5 秒後照常處理。
+        var resolved = false
+        let finish = { [self] in
+            guard !resolved else { return }
+            resolved = true
+            resolvePendingSave()
+        }
+        prepareToCloseAsync(finish)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { MainActor.assumeIsolated { finish() } }
     }
 
     func prepareToCloseAsync(_ done: @escaping () -> Void) {
         guard let url = documentURL, highlightsReadOnly == nil, let bridge else { done(); return }
-        bridge.commitNote { [weak self] json in
+        bridge.commitNote { [self] json in
             if let json {
-                do { try SidecarFile.write(json, for: url); self?.lastSidecarText = json }
-                catch { self?.pendingSave = .some(json) }
+                do { try SidecarFile.write(json, for: url); lastSidecarText = json }
+                catch { pendingSave = .some(json) }
             }
             done()
         }
@@ -366,7 +381,9 @@ final class DocumentState: ObservableObject, Identifiable {
             if fm.fileExists(atPath: from.path), !fm.fileExists(atPath: to.path) {
                 try? fm.moveItem(at: from, to: to)
             }
-            self.open(newURL)
+            // 一檔一窗：新檔名若已經開在別的視窗，就交給那個視窗，這裡不重複開。
+            // 不帶到前景 —— 改名多半是 AI 在背景做的，不該搶走焦點
+            WindowRouter.shared.open(newURL, in: self, activate: false)
         }
         if let bridge { bridge.commitNote(completion: finish) } else { finish(nil) }
     }

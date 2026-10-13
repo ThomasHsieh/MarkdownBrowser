@@ -78,7 +78,8 @@ final class FileWatcher {
             guard let self else { return }
             let fm = FileManager.default
             if !fm.fileExists(atPath: self.url.path),
-               let newPath, newPath != self.url.path, fm.fileExists(atPath: newPath) {
+               let newPath, newPath != self.url.path, fm.fileExists(atPath: newPath),
+               !Self.isInTrash(newPath) {
                 self.stop()
                 let target = URL(fileURLWithPath: newPath)
                 DispatchQueue.main.async { self.onRename?(target) }
@@ -87,6 +88,12 @@ final class FileWatcher {
                 self.rearm()
             }
         }
+    }
+
+    /// 丟進垃圾桶在檔案系統上也是一次 rename，fd 問到的會是垃圾桶裡的路徑。
+    /// 那是刪除不是改名：跟過去的話，sidecar 會被一起搬進垃圾桶。
+    private static func isInTrash(_ path: String) -> Bool {
+        path.contains("/.Trash/") || path.contains("/.Trashes/")
     }
 
     private static func currentPath(of fd: CInt) -> String? {

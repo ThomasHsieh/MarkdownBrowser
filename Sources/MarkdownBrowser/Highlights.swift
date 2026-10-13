@@ -87,7 +87,28 @@ enum SidecarFile {
         if let v = object["version"] as? Int, v > version {
             return .invalid("標記檔的格式版本比這個 App 新，已停止寫入以免覆蓋")
         }
+        // 網頁端載入時會略過看不懂的條目，下一次存檔就等於把它們刪了。
+        // 所以只要有一條會被略過或被改掉，整個檔就只讀不寫。
+        let entries = object["highlights"] as? [Any] ?? []
+        guard entries.allSatisfy(isUnderstood) else {
+            return .invalid("標記檔有這個 App 看不懂的條目，已停止寫入以免覆蓋")
+        }
         return .ok(text)
+    }
+
+    static let styles: Set<String> = ["green", "blue", "purple", "pink", "underline"]
+
+    /// 跟 highlights.js 的 load() 對齊：那邊會丟掉或補預設值的欄位，這裡都算看不懂。
+    private static func isUnderstood(_ entry: Any) -> Bool {
+        guard let h = entry as? [String: Any],
+              h["id"] is String,
+              let style = h["style"] as? String, styles.contains(style),
+              h["exact"] is String else { return false }
+        for key in ["prefix", "suffix", "note", "created"] where h[key] != nil {
+            guard h[key] is String else { return false }
+        }
+        if let heading = h["heading"], !(heading is String || heading is NSNull) { return false }
+        return true
     }
 
     /// `nil` 代表標記全刪光了：刪檔，不留一個空的 sidecar。原子寫入（暫存檔再 rename）。

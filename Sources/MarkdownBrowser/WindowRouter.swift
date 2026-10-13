@@ -124,13 +124,13 @@ final class WindowRouter: ObservableObject {
     /// 在指定的視窗開檔，但**一檔一窗**：那個檔已經開在別的視窗，就把那個視窗
     /// 帶到前景，這個視窗不動。每個視窗的網頁端各自是標記資料的唯一真相，
     /// 同一個檔開兩份就會兩邊各寫各的、互相覆蓋（docs/SPEC.md 11.2）。
-    func open(_ url: URL, in document: DocumentState) {
+    func open(_ url: URL, in document: DocumentState, activate: Bool = true) {
         if let existing = window(reading: url) {
-            existing.bringToFront()
+            if activate { existing.bringToFront() }
             return
         }
         document.open(url)
-        document.bringToFront()
+        if activate { document.bringToFront() }
     }
 
     private func window(reading url: URL) -> DocumentState? {
