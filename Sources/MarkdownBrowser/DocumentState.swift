@@ -470,34 +470,42 @@ final class DocumentState: PaneDocument {
 
     /// 心得的標題被點（內文或側欄）：書捲到對應位置。
     func syncBook(fromNoteHeading id: String) {
-        guard isComparing, let note = documentURL, let item = outline.first(where: { $0.id == id }) else { return }
+        guard isComparing, let item = outline.first(where: { $0.id == id }),
+              let (chapters, chapterTitle) = bookChapters(under: id) else { return }
+        book.bridge?.syncTo(["chapters": chapters, "text": item.text, "quiet": item.level == 1 || chapterTitle,
+                             "background": isTabbed && selectedTab != .book])
+    }
+
+    /// 心得的引文多半是書的原句：去書裡找那一段（docs/SPEC.md 13.6）
+    func syncBook(fromQuote text: String, under headingID: String?) {
+        // 對不到章也照樣找：書那邊找不到這一章就搜全書
+        guard isComparing, documentURL != nil else { return }
+        let chapters = bookChapters(under: headingID, silently: true)?.chapters ?? []
+        book.bridge?.syncTo(["chapters": chapters, "quote": text,
+                             "background": isTabbed && selectedTab != .book])
+    }
+
+    /// 心得某個位置（以它所在小節的標題代表）對到書的哪幾章，以及那個標題是不是章名本身。
+    /// 對不到就提示（silently 時不提示）並回 nil。
+    private func bookChapters(under id: String?, silently: Bool = false) -> (chapters: [Int], chapterTitle: Bool)? {
+        guard let note = documentURL else { return nil }
         let mapped = chapterMap.chapters(in: note)
         guard !mapped.isEmpty else {
-            book.bridge?.toast("這一章在書裡找不到對應的章節")
-            return
+            if !silently { book.bridge?.toast("這一章在書裡找不到對應的章節") }
+            return nil
         }
-        var chapters = mapped
-        var quiet = item.level == 1
         // 單檔心得：往回找最近一個「是某一章章名」的標題
         let headed = mapped.filter { chapterMap.targets[$0]?.heading != nil }
-        if !headed.isEmpty, let index = outline.firstIndex(where: { $0.id == id }) {
-            var found: Int?
-            for h in outline[...index].reversed() {
-                let key = ChapterMap.normalize(h.text)
-                if let c = headed.first(where: { chapterMap.targets[$0]?.heading.map(ChapterMap.normalize) == key }) {
-                    found = c
-                    if h.id == id { quiet = true }
-                    break
-                }
+        guard !headed.isEmpty else { return (mapped, false) }
+        let index = id.flatMap { id in outline.firstIndex(where: { $0.id == id }) }
+        for h in (index.map { outline[...$0] } ?? []).reversed() {
+            let key = ChapterMap.normalize(h.text)
+            if let c = headed.first(where: { chapterMap.targets[$0]?.heading.map(ChapterMap.normalize) == key }) {
+                return ([c], h.id == id)
             }
-            guard let found else {
-                book.bridge?.toast("這一節之前沒有對應的章節")
-                return
-            }
-            chapters = [found]
         }
-        book.bridge?.syncTo(["chapters": chapters, "text": item.text, "quiet": quiet,
-                             "background": isTabbed && selectedTab != .book])
+        if !silently { book.bridge?.toast("這一節之前沒有對應的章節") }
+        return nil
     }
 
     /// 書翻到目前這份心得的那一章（章首）。
@@ -616,6 +624,10 @@ final class DocumentState: PaneDocument {
 
     override func headingClicked(id: String, text: String, level: Int, chapter: Int?, isChapterTitle: Bool) {
         syncBook(fromNoteHeading: id)
+    }
+
+    override func quoteClicked(text: String, headingID: String?) {
+        syncBook(fromQuote: text, under: headingID)
     }
 }
 

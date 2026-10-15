@@ -391,6 +391,9 @@ class PaneDocument: ObservableObject, Identifiable {
     /// 內文標題被點。
     func headingClicked(id: String, text: String, level: Int, chapter: Int?, isChapterTitle: Bool) {}
 
+    /// 心得裡的引文被點。headingID 是引文所在小節的標題，前面沒有標題時是 nil。
+    func quoteClicked(text: String, headingID: String?) {}
+
     /// 書目前的位置（章、閱讀位置）。只有書那欄會送。
     func positionChanged(_ body: [String: Any]) {}
 

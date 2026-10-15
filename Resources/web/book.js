@@ -496,6 +496,7 @@
 
   BK.syncTo = function (req) {
     BK.navigatedAt = Date.now();
+    if (req.quote) { syncQuote(req); return; }
     if (BK.fixed) { gotoChapterPage((req.chapters || [])[0], true); return; }
     const chapters = req.chapters || [];
     const ranges = chapters.map(chapterRange).filter(Boolean);
@@ -507,7 +508,7 @@
     // 點的是章名（quiet）就不找，章首正是要去的地方
     if (!hit && req.text && !req.quiet) {
       const k = keywordHit(ranges, req.text);
-      if (k) { landKeyword(k, req); return; }
+      if (k) { landRange(k.range, req, `依關鍵詞「${k.word}」對到內文`); return; }
     }
     const fallback = headingsIn(ranges[0])[0] || ranges[0].start;
     I().landSync(hit || fallback, req, !!hit, '找不到對應小節，已跳到章首');
@@ -519,8 +520,9 @@
    * 出現好幾次就用第一次：書第一次提到一個人名或故事，幾乎都是那段的開頭。 */
   const FUNCTION_CHARS = new Set('的了與是在和就也而或及之把被讓不個成'.split(''));
 
-  /* 這幾章的內文：文字節點依序接起來、拿掉空白，另外記住每個字在哪個節點的第幾個位置 */
-  function chapterText(ranges) {
+  /* 這幾章的內文：文字節點依序接起來、拿掉空白，另外記住每個字在哪個節點的第幾個位置。
+   * mapChar 可以換掉比對用的字（引文比對要連標點一起拿掉、異體字歸一），回空字串就跳過 */
+  function chapterText(ranges, mapChar) {
     let text = '';
     const where = [];
     for (const range of ranges) {
@@ -533,9 +535,8 @@
         if (n.parentElement.closest('.mb-fn, .mb-hidden, script, style')) continue;
         const d = n.data;
         for (let i = 0; i < d.length; i++) {
-          if (/\s/.test(d[i])) continue;
-          text += d[i];
-          where.push([n, i]);
+          const c = mapChar ? mapChar(d[i]) : (/\s/.test(d[i]) ? '' : d[i]);
+          for (const x of c) { text += x; where.push([n, i]); }
         }
       }
     }
@@ -557,25 +558,94 @@
       }
     }
     if (best.length < 3) return null;
-    const at = text.indexOf(best);
+    return { word: best, range: rangeOf(where, text.indexOf(best), best.length) };
+  }
+
+  function rangeOf(where, at, length) {
     const [sn, so] = where[at];
-    const [en, eo] = where[at + best.length - 1];
+    const [en, eo] = where[at + length - 1];
     const range = document.createRange();
     range.setStart(sn, so);
     range.setEnd(en, eo + 1);
-    return { word: best, range };
+    return range;
   }
 
-  /* 捲（翻）到關鍵詞那裡，只閃那幾個字，並提示這是依關鍵詞推測的 */
-  function landKeyword(k, req) {
-    const rect = k.range.getClientRects()[0] || k.range.getBoundingClientRect();
+  /* ── 引文找原文（docs/SPEC.md 13.6）──────────────────────
+   * 心得的引文多半一字不差抄自書，但標點、空白常被改（全形半形、引號種類、斷行），
+   * 書又常用異體字（「爲」「着」「裏」）。所以兩邊都拿掉空白與標點、異體字歸一再比。
+   * 先找對應的章：完整出現，或最長的一段重疊（至少 8 個字、也至少佔引文四成，提示是部分
+   * 對到的）。這一章都沒有才找全書（引文可能出自別章）。 */
+  const VARIANTS = {};
+  for (const pair of ['爲為', '着著', '裏裡', '綫線', '衆眾', '眞真', '敎教', '説說', '緖緒', '户戶', '啓啟',
+    '峯峰', '羣群', '僞偽', '産產', '鎭鎮', '衞衛', '内內', '兑兌', '税稅', '脱脫', '鋭銳', '悦悅', '閲閱',
+    '値值', '吿告', '黄黃', '尙尚', '颜顏', '彥彦', '淸清', '靑青', '卽即', '旣既', '槪概', '曁暨']) {
+    VARIANTS[pair[0]] = pair[1];
+  }
+
+  function quoteChar(c) {
+    if (/[\s\p{P}\p{S}]/u.test(c)) return '';
+    const k = c.normalize('NFKC').toLowerCase();          // 全形數字與英文歸成半形
+    return [...k].map((x) => VARIANTS[x] || x).filter((x) => !/[\s\p{P}\p{S}]/u.test(x)).join('');
+  }
+
+  function quoteKey(text) {
+    return [...text].map(quoteChar).join('');
+  }
+
+  function quoteHit(ranges, quote, partial) {
+    const q = quoteKey(quote);
+    if (!q) return null;
+    const { text, where } = chapterText(ranges, quoteChar);
+    const at = text.indexOf(q);
+    if (at !== -1) return { range: rangeOf(where, at, q.length), whole: true };
+    if (!partial || q.length < 8) return null;
+    const min = Math.max(8, Math.ceil(q.length * 0.4));
+    let best = '', bestAt = -1;
+    for (let i = 0; i + min <= q.length; i++) {
+      for (let j = q.length; j - i >= Math.max(min, best.length + 1); j--) {
+        const k = text.indexOf(q.slice(i, j));
+        if (k !== -1) { best = q.slice(i, j); bestAt = k; break; }
+      }
+    }
+    return best ? { range: rangeOf(where, bestAt, best.length), whole: false } : null;
+  }
+
+  function syncQuote(req) {
+    // 固定版面是圖，沒有文字可找：照標題同步的做法翻到那一章
+    if (BK.fixed) {
+      if ((req.chapters || []).length) gotoChapterPage(req.chapters[0], true);
+      else MB.toast('固定版面的書沒有文字可以比對');
+      return;
+    }
+    // 引文就是章名（心得檔頭的「第4章：…」）：到那一章章首。章首常是一張圖，正文裡同樣的字
+    // 只出現在書末的參考文獻
+    const key = quoteKey(req.quote);
+    const titled = BK.toc.findIndex((t) => quoteKey(t.label) === key);
+    const titledRange = titled !== -1 ? chapterRange(titled) : null;
+    if (titledRange) {
+      I().landSync(headingsIn(titledRange)[0] || titledRange.start, req, true, null);
+      return;
+    }
+    // 先找這一章（含部分對到），才找全書：別章也有同樣字句時（參考文獻、總結），這一章優先
+    const chapters = (req.chapters || []).map(chapterRange).filter(Boolean);
+    const whole = [{ start: content, end: content.querySelector(':scope > .mb-end') }];
+    const hit = (chapters.length && (quoteHit(chapters, req.quote, false) || quoteHit(chapters, req.quote, true))) ||
+      quoteHit(whole, req.quote, false) ||
+      (!chapters.length && quoteHit(whole, req.quote, true));
+    if (!hit) { MB.toast('書裡找不到這段引文'); return; }
+    landRange(hit.range, req, hit.whole ? null : '書裡沒有完全相同的句子，已跳到最接近的一段');
+  }
+
+  /* 捲（翻）到那幾個字，只閃那幾個字。note 是提示（依關鍵詞推測、部分對到），沒有就不提示 */
+  function landRange(range, req, note) {
+    const rect = range.getClientRects()[0] || range.getBoundingClientRect();
     const background = !!req.background;
     if (BK.paged) {
       goView(viewOfX(rect.left), !background);
     } else {
       window.scrollTo({ top: Math.max(0, window.scrollY + rect.top - 80), behavior: background ? 'auto' : 'smooth' });
     }
-    const show = () => { flashRange(k.range); MB.toast(`依關鍵詞「${k.word}」對到內文`); };
+    const show = () => { flashRange(range); if (note) MB.toast(note); };
     if (background) I().setPendingSync(show);
     else setTimeout(show, BK.paged ? 280 : 500);
   }

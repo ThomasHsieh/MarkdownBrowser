@@ -105,6 +105,10 @@ struct WebPane: NSViewRepresentable {
                                      chapter: body["chapter"] as? Int,
                                      isChapterTitle: body["chapterTitle"] as? Bool ?? false)
 
+            case "quoteClicked":
+                guard let text = body["text"] as? String else { return }
+                state.quoteClicked(text: text, headingID: body["heading"] as? String)
+
             case "bookPosition":
                 state.positionChanged(body)
 

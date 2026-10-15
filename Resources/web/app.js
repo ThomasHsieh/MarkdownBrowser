@@ -335,6 +335,49 @@ content.addEventListener('click', (e) => {
   toSwift(msg);
 });
 
+/* 段落裡有好幾行（`>` 連續幾行不空行會併成一段，檔頭的「第4章：…」「作者：…」就是）時，
+ * 只取點到的那一行：合起來的那段書裡不會有 */
+function clickedLine(para, e) {
+  // <br> 與原始檔的換行都算一行
+  const textOf = (frag) => {
+    const holder = document.createElement('div');
+    holder.appendChild(frag);
+    holder.querySelectorAll('br').forEach((br) => br.replaceWith('\n'));
+    return holder.textContent;
+  };
+  const whole = document.createRange();
+  whole.selectNodeContents(para);
+  const lines = textOf(whole.cloneContents()).split('\n');
+  if (lines.filter((l) => l.trim()).length < 2 || !document.caretRangeFromPoint) return null;
+  const caret = document.caretRangeFromPoint(e.clientX, e.clientY);
+  if (!caret || !para.contains(caret.startContainer)) return null;
+  const before = document.createRange();
+  before.setStart(para, 0);
+  before.setEnd(caret.startContainer, caret.startOffset);
+  const index = textOf(before.cloneContents()).split('\n').length - 1;
+  return (lines[index] || '').trim() || null;
+}
+
+/* 點心得裡的引文：心得的引文多半是書的原句，交給 Swift 去書裡找那一段（docs/SPEC.md 13.6）。
+ * 一次一段（<p>／<li>），不是整個 blockquote —— 同一塊常連引好幾句，點哪句就找哪句。
+ * 書那欄自己不做：書裡的 blockquote 是書的內容，沒有對應的心得 */
+content.addEventListener('click', (e) => {
+  if (window.MBBook && window.MBBook.active) return;
+  const q = e.target.closest('blockquote');
+  if (!q || !content.contains(q)) return;
+  if (e.target.closest('a, mark.mb-hl')) return;
+  if (!window.getSelection().isCollapsed) return;
+  const para = e.target.closest('p, li') || q;
+  const text = clickedLine(para, e) || para.textContent.trim();
+  if (!text) return;
+  // 引文所在的小節：決定去書的哪一章找（單檔心得一份對好幾章）
+  let heading = null;
+  for (const h of content.querySelectorAll('h1, h2, h3, h4')) {
+    if (h.compareDocumentPosition(q) & Node.DOCUMENT_POSITION_FOLLOWING) heading = h; else break;
+  }
+  toSwift({ type: 'quoteClicked', text, heading: heading ? heading.id : null });
+});
+
 /* 最後點過的那一欄是焦點欄：⌘F、⌘P、標記都作用在它身上。 */
 document.addEventListener('mousedown', () => toSwift({ type: 'focus' }), true);
 

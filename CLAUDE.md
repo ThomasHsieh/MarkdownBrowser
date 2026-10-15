@@ -57,9 +57,9 @@ Swift 端只做殼，**所有排版都在 CSS 裡**。切主題只是換 `<html>
   並推給自己那個視窗的網頁端，沒有其他同步路徑
 - `WebBridge` protocol 是 Swift → JS 的唯一介面，由 `WebPane.Coordinator` 實作，
   一欄一份。兩欄之間不直接溝通，一律經過 Swift 轉送（章名對應、換檔、搬視窗都要 Swift）
-- JS → Swift 有十一種訊息：`ready`、`outline`、`activeHeading`、`openExternal`，
+- JS → Swift 有十二種訊息：`ready`、`outline`、`activeHeading`、`openExternal`，
   標記的 `highlights`、`saveHighlights`、`copy`、`bannerAction`，以及對照的
-  `headingClicked`、`bookPosition`、`focus`。需要回傳值的
+  `headingClicked`、`quoteClicked`、`bookPosition`、`focus`。需要回傳值的
   呼叫（`highlightSelection`、`commitNote`、`probeHighlights`）用 `evaluateJavaScript`
   的完成回呼拿，不另外設計訊息
 - **選單與按鍵監聽一律作用在 `WindowRouter.active` 上。** SwiftUI 的 focus 環境在
