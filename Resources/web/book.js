@@ -377,7 +377,8 @@
       if (el.closest('h1, h2, h3, h4, h5, h6, li, table, aside, blockquote, figure')) continue;
       if (el.querySelector('p, div, img, svg, table, ul, ol')) continue;
       const text = el.textContent.replace(/\s+/g, '');
-      if (!text || text.length > 80 || /[。！？]$/.test(text)) continue;
+      // 只排除句號結尾的：問句當標題很常見（「適合誰？」「4.1（問句小節名）？」）
+      if (!text || text.length > 80 || /[。.]$/.test(text)) continue;
       const me = style(el);
       if (me.weight < 600 || me.size < body * 1.12) continue;
       el.setAttribute('data-mb-ph', `${el.getAttribute('class') || 'size'}|${Math.round(me.size * 10) / 10}`);
