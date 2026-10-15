@@ -192,12 +192,52 @@
     }
 
     frame.remove();
+    promotePseudoHeadings(frag, payload.toc);
     // 注腳要整本一起看：連結與它指向的 aside 常在不同章
     hideFootnotes(frag);
     attachLinks(frag);
     return frag;
   }
 
+
+  /* 偽標題升格成真的標題：大綱、同步、下拉選單的小節才找得到它們。
+   * 層級看書的目錄：目錄指到的那幾個（「3.1（小節名）」）照目錄層級，同一種樣式
+   * （原本的 class）的其他段落跟它同一層；目錄沒指到的樣式放在下一層。只用字級或出現次數排
+   * 不可靠 —— 《書 E》有六種一樣 1.29em 的粗體樣式，小節標題會被擠到最底層。
+   * 書完全沒有目錄可對時，才依字級由大到小排（同字級同一層）。從 h2 開始，h1 留給書自己標的章名。 */
+  function promotePseudoHeadings(root, toc) {
+    const els = [...root.querySelectorAll('[data-mb-ph]')];
+    if (!els.length) return;
+    const tocLevel = new Map();
+    for (const t of toc || []) tocLevel.set(idFor(t.path, t.fragment), t.level || 1);
+    const keyOf = (el) => el.getAttribute('data-mb-ph').split('|')[0];
+    const groupLevel = new Map();
+    for (const el of els) {
+      if (!el.id || !tocLevel.has(el.id)) continue;
+      const lv = Math.max(2, tocLevel.get(el.id));
+      const key = keyOf(el);
+      groupLevel.set(key, Math.min(groupLevel.get(key) || 9, lv));
+    }
+    let levelOf;
+    if (groupLevel.size) {
+      const below = Math.min(4, Math.max(...groupLevel.values()) + 1);
+      levelOf = (el) => groupLevel.get(keyOf(el)) || below;
+    } else {
+      const sizes = [...new Set(els.map((el) => parseFloat(el.getAttribute('data-mb-ph').split('|')[1])))]
+        .sort((a, b) => b - a);
+      levelOf = (el) => 2 + sizes.indexOf(parseFloat(el.getAttribute('data-mb-ph').split('|')[1]));
+    }
+    for (const el of els) {
+      const h = document.createElement('h' + Math.min(4, levelOf(el)));
+      for (const attr of [...el.attributes]) {
+        if (attr.name !== 'data-mb-ph') h.setAttribute(attr.name, attr.value);
+      }
+      h.classList.remove('mb-b', 'mb-small');          // 標題用主題的標題色，不是粗體的橘
+      if (!h.getAttribute('class')) h.removeAttribute('class');
+      while (el.firstChild) h.appendChild(el.firstChild);
+      el.replaceWith(h);
+    }
+  }
 
   /* 書嵌的字型一律不用（字體跟著 data-font），@import 也不跟 */
   function addStyle(fdoc, text) {
@@ -327,6 +367,21 @@
         }
       }
     }
+    // 偽標題：有些書（calibre 轉出來的特別多）整本沒有標題標籤，章節標題是一段加大加粗的
+    // <p class="titleinbig">。書的 CSS 丟掉後只剩粗體，變成一段橘色的普通文字，大綱也是空的。
+    // 這裡先記下候選：短、加粗、字級比內文大一截的段落，連同它原本的 class 與字級，
+    // 等整本讀完再依樣式排出層級（promotePseudoHeadings）
+    const body = parseFloat(win.getComputedStyle(fdoc.body).fontSize) || 16;
+    for (const [el] of flags) {
+      if (el.localName !== 'p' && el.localName !== 'div') continue;
+      if (el.closest('h1, h2, h3, h4, h5, h6, li, table, aside, blockquote, figure')) continue;
+      if (el.querySelector('p, div, img, svg, table, ul, ol')) continue;
+      const text = el.textContent.replace(/\s+/g, '');
+      if (!text || text.length > 80 || /[。！？]$/.test(text)) continue;
+      const me = style(el);
+      if (me.weight < 600 || me.size < body * 1.12) continue;
+      el.setAttribute('data-mb-ph', `${el.getAttribute('class') || 'size'}|${Math.round(me.size * 10) / 10}`);
+    }
     // 讀完才改：邊讀邊改會讓後面元素的計算值跟著變
     for (const [el, cls] of flags) {
       el.removeAttribute('style');
@@ -446,6 +501,7 @@
     if (!ranges.length) return;
     const candidates = ranges.flatMap(headingsIn);
     const hit = req.text ? I().bestHeading(candidates, req.text) : null;
+   
     // 標題對不到：拿心得標題的關鍵詞去這一章的內文找（docs/SPEC.md 13.6）。
     // 點的是章名（quiet）就不找，章首正是要去的地方
     if (!hit && req.text && !req.quiet) {
@@ -748,6 +804,7 @@
     const first = firstCol();
     const g = geom();
     let any = false;
+   
     for (let i = 0; i < g.n; i++) {
       const slot = document.createElement('div');
       slot.className = 'mb-fullpage-slot';
@@ -775,7 +832,9 @@
   function geom() {
     const cs = getComputedStyle(content);
     const side = parseFloat(cs.paddingLeft) || 0;
-    const vw = document.documentElement.clientWidth;
+    // 要用小數的寬度：clientWidth 會四捨五入（818.75 → 819），每頁差 0.25px，
+    // 翻到第 80 頁就累積差 20px，元素會被算到前一頁、翻頁也會慢慢偏掉
+    const vw = content.getBoundingClientRect().width;
     const n = doubleNow ? 2 : 1;
     const gap = parseFloat(cs.columnGap) || side * 2;
     const colW = (vw - side * 2 - (n - 1) * gap) / n;
@@ -849,10 +908,15 @@
     }
   }
 
+  /* 畫面上某個 x 座標落在第幾欄。以「目前這一頁」為基準往前後算，不從第一頁累加 ——
+   * 欄寬是小數，從頭累加幾十頁後誤差會大到把元素算進前一頁 */
   function colOfX(left) {
     const g = geom();
-    const origin = content.getBoundingClientRect().left;
-    return Math.max(0, Math.floor((left - origin + content.scrollLeft - g.side + 1) / g.stride));
+    const rel = left - content.getBoundingClientRect().left;
+    const v = Math.floor((rel + 1) / g.vw);
+    const within = rel - v * g.vw;
+    const c = Math.min(g.n - 1, Math.max(0, Math.floor((within - g.side + g.gap / 2) / g.stride)));
+    return Math.max(0, (curView() + v) * g.n + c);
   }
   function colOf(el) {
     const r = (el.getClientRects()[0]) || el.getBoundingClientRect();

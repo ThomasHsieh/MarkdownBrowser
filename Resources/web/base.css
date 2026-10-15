@@ -596,14 +596,17 @@ html.mb-paged .mb-book .mb-pushed { break-before: column; -webkit-column-break-b
 #mb-turn-next { right: 0; }
 /* 只有一張圖的頁（封面、書名頁）：版面裡的圖填滿整頁欄高，滑動時看到的是它；
    停下來後由 #mb-fullpage 從頁面頂端放到底部 */
-html.mb-paged .mb-book section.mb-imgpage { height: 100%; display: flex; align-items: center; justify-content: center; }
+/* overflow:hidden 讓這一頁不可分割：圖旁邊常有只放 <br> 的空段落，撐出一行就會多擠出一頁空白 */
+/* 高度不能剛好 100%：欄高常是小數，剛好等於欄高時會被進位擠出一欄空白頁 */
+html.mb-paged .mb-book section.mb-imgpage { height: calc(100% - 4px); overflow: hidden; display: flex; align-items: center; justify-content: center; }
+html.mb-paged .mb-book section.mb-imgpage br { display: none; }
 /* 圖外面包的 figure、p、div 的上下邊距會把頁撐出一頁空白 */
 html.mb-paged .mb-book section.mb-imgpage * { margin: 0; padding: 0; }
 html.mb-paged .mb-book section.mb-imgpage img,
 html.mb-paged .mb-book section.mb-imgpage svg {
   /* 不能用 100%：圖外面通常還包一層 div 或 p，百分比對到的是那層的 auto 高度，等於沒設，
      圖照原尺寸排版就切到下一頁（書名頁的下半截出現在版權頁頂端） */
-  max-height: calc(100vh - var(--pg-top) - var(--pg-bottom));
+  max-height: calc(100vh - var(--pg-top) - var(--pg-bottom) - 4px);
   max-width: 100%;
 }
 #mb-fullpage {
