@@ -24,8 +24,11 @@
     markers: [],          // [{el, index, level}]，依文件順序，標出每個目錄項目從哪裡開始
     chapter: null,
     navigatedAt: 0,       // 最後一次被同步或選單帶去某處的時間
+    layout: 'single',     // scroll / single / double（docs/SPEC.md 13.12）
   };
   window.MBBook = BK;
+  // 翻頁模式只用在可重排的書；心得那欄（BK.active 為假）一律捲動
+  Object.defineProperty(BK, 'paged', { get: () => BK.active && !BK.fixed && BK.layout !== 'scroll' });
 
   BK.deactivate = function () {
     if (!BK.active) return;
@@ -34,7 +37,8 @@
     BK.toc = [];
     BK.markers = [];
     BK.chapter = null;
-    document.documentElement.classList.remove('mb-book-mode', 'mb-fixed-mode');
+    document.documentElement.classList.remove('mb-book-mode', 'mb-fixed-mode', 'mb-paged', 'mb-double');
+    hideFullpage();
     content.classList.remove('mb-book');
     closePopover();
   };
@@ -95,8 +99,13 @@
     const sections = buildSections(payload);
     content.innerHTML = '';
     content.appendChild(sections);
+    const end = document.createElement('div');
+    end.className = 'mb-end';
+    content.appendChild(end);
     activateImages();
+    applyLayout();
 
+    markImagePages();
     const outline = assignHeadings();
     locateChapters();
     outline.forEach((o) => { o.chapter = chapterOf(document.getElementById(o.id)); });
@@ -105,11 +114,16 @@
 
     const target = anchor || payload.position;
     if (target) restoreBookAnchor(target);
-    else window.scrollTo(0, 0);
+    else { window.scrollTo(0, 0); content.scrollLeft = 0; }
+    updateIndicators();
     // 圖片載入後版面會變，載完再回位一次（使用者已經自己捲了就不動）
     // 之後若被同步帶走（navigatedAt 更新）就不再拉回來
     const renderedAt = Date.now();
-    if (target) I().afterLayout(() => { if (!I().userMoved() && BK.navigatedAt < renderedAt) restoreBookAnchor(target); });
+    I().afterLayout(() => {
+      fixPushedLines();
+      if (target && !I().userMoved() && BK.navigatedAt < renderedAt) restoreBookAnchor(target);
+      updateIndicators();
+    });
 
     toSwift({ type: 'outline', outline });
     reportPosition(false, true);
@@ -298,6 +312,21 @@
       if (me.valign === 'super' && tag !== 'sup') cls.push('mb-sup');
       flags.push([el, cls]);
     }
+    // 章名與副標常用同一層標籤（《書 A》兩個都是 h1，靠書的 CSS 分 1.5em 與 1.1em）。
+    // 書的 CSS 丟掉之後兩個一樣大，所以比原書字級：同一章裡同層標題，比第一個小兩成以上的
+    // 就是副標，往下降一級顯示
+    for (const sec of fdoc.body.querySelectorAll('section.mb-chapter')) {
+      const first = {};
+      for (const h of sec.querySelectorAll('h1, h2, h3, h4, h5, h6')) {
+        const size = parseFloat(win.getComputedStyle(h).fontSize) || 0;
+        const tag = h.localName;
+        if (!first[tag]) { first[tag] = size; continue; }
+        if (size && size < first[tag] * 0.85) {
+          const entry = flags.find(([el]) => el === h);
+          if (entry) entry[1].push('mb-subhead');
+        }
+      }
+    }
     // 讀完才改：邊讀邊改會讓後面元素的計算值跟著變
     for (const [el, cls] of flags) {
       el.removeAttribute('style');
@@ -318,6 +347,14 @@
         aside.classList.add('mb-fn');
       }
     });
+  }
+
+  /* 只有一張圖、沒有文字的章（封面、書名頁）。翻頁模式下翻到它時滿版顯示（docs/SPEC.md 13.12） */
+  function markImagePages() {
+    for (const sec of content.querySelectorAll(':scope > section.mb-chapter')) {
+      const pics = sec.querySelectorAll('img, svg');
+      if (pics.length === 1 && !sec.textContent.trim()) sec.classList.add('mb-imgpage');
+    }
   }
 
   /* ── 標題、目錄與章 ───────────────────────────────────── */
@@ -417,30 +454,121 @@
     BK.navigatedAt = Date.now();
     if (BK.fixed) { gotoChapterPage(index, false); return; }
     const range = chapterRange(index);
-    if (range) { range.start.scrollIntoView({ behavior: 'smooth', block: 'start' }); I().settleOn(range.start); }
+    if (range) { I().reveal(range.start, true); I().settleOn(range.start); }
   };
 
   /* ── 閱讀位置 ─────────────────────────────────────────
-   * 書的章可能很長、標題很少，只用標題當錨點會差很遠。改用畫面頂端那個有 id
-   * 的元素（書裡的段落、分頁標記多半有 id），沒有才退回標題。
+   * 記兩種：畫面頂端那個有 id 的元素加偏移（捲動模式精準回位用），以及
+   * 「第幾章（spine 檔）的第幾個字」（sec／off）。書裡的段落多半沒有 id，往上找會找到
+   * 整章的 section；翻頁模式要知道「哪一頁」，只能靠文字位置。兩種模式互相切換時也靠它。
    */
+  function sectionOf(node) {
+    const el = node && (node.nodeType === 1 ? node : node.parentElement);
+    return el ? el.closest('section.mb-chapter') : null;
+  }
+
+  function offsetIn(sec, node, off) {
+    const r = document.createRange();
+    r.setStart(sec, 0);
+    r.setEnd(node, off);
+    return r.toString().length;
+  }
+
+  function pointAt(sec, off) {
+    const w = document.createTreeWalker(sec, NodeFilter.SHOW_TEXT);
+    let n, pos = 0, last = null;
+    while ((n = w.nextNode())) {
+      if (pos + n.data.length > off) return { node: n, off: Math.max(0, off - pos) };
+      pos += n.data.length;
+      last = n;
+    }
+    return last ? { node: last, off: last.data.length } : null;
+  }
+
+  function rectAt(p) {
+    const r = document.createRange();
+    r.setStart(p.node, p.off);
+    r.setEnd(p.node, Math.min(p.node.data.length, p.off + 1));
+    const rects = r.getClientRects();
+    return rects.length ? rects[0] : r.getBoundingClientRect();
+  }
+
+  /* 閱讀起點：翻頁模式是這一頁的左上角，捲動模式是畫面頂端的第一行 */
+  function readingPoint() {
+    let x0, y0;
+    if (BK.paged) { const g = geom(); x0 = g.side; y0 = g.top; }
+    else {
+      const r = content.getBoundingClientRect();
+      x0 = r.left + (parseFloat(getComputedStyle(content).paddingLeft) || 0);
+      y0 = 24;
+    }
+    // 行首可能是縮排的空白或圖片，沿著第一行往右、往下各試幾個點
+    for (const dy of [4, 24, 48]) {
+      for (let dx = 2; dx < 400; dx += 36) {
+        const range = document.caretRangeFromPoint(x0 + dx, y0 + dy);
+        if (range && content.contains(range.startContainer) && range.startContainer.nodeType === 3) return range;
+      }
+    }
+    return null;
+  }
+
   function captureBookAnchor() {
     if (!BK.active || BK.fixed) return null;
-    const rect = content.getBoundingClientRect();
-    let el = document.elementFromPoint(rect.left + 60, 30);
-    while (el && el !== content && !el.id) el = el.parentElement;
-    if (el && el !== content && el.id && content.contains(el)) {
-      return { id: el.id, delta: el.getBoundingClientRect().top };
+    const out = {};
+    const range = readingPoint();
+    const sec = range && sectionOf(range.startContainer);
+    if (sec) { out.sec = sec.id; out.off = offsetIn(sec, range.startContainer, range.startOffset); }
+    if (!BK.paged) {
+      const rect = content.getBoundingClientRect();
+      let el = document.elementFromPoint(rect.left + 60, 30);
+      while (el && el !== content && !el.id) el = el.parentElement;
+      if (el && el !== content && el.id && content.contains(el)) {
+        out.id = el.id;
+        out.delta = el.getBoundingClientRect().top;
+      } else if (!out.sec) {
+        return I().captureAnchor();
+      }
+    } else if (!out.sec) {
+      const s = chapterSpan();
+      if (s.secs[s.idx]) { out.sec = s.secs[s.idx].id; out.off = 0; }
     }
-    return I().captureAnchor();
+    return out;
+  }
+
+  /* 錨點在畫面上的位置（rect）。文字位置優先，沒有才用元素 */
+  function anchorRect(anchor) {
+    if (anchor.sec) {
+      const sec = document.getElementById(anchor.sec);
+      if (sec) {
+        const p = pointAt(sec, anchor.off || 0);
+        return p ? rectAt(p) : sec.getBoundingClientRect();
+      }
+    }
+    if (anchor.id) {
+      const el = document.getElementById(anchor.id);
+      if (el) return (el.getClientRects()[0]) || el.getBoundingClientRect();
+    }
+    return null;
   }
 
   function restoreBookAnchor(anchor) {
-    if (anchor && anchor.id && !document.getElementById(anchor.id) && typeof anchor.y !== 'number') {
-      window.scrollTo(0, 0);
+    if (!anchor) return;
+    if (BK.paged) {
+      const r = anchorRect(anchor);
+      goView(r ? viewOfX(r.left) : 0, false);
       return;
     }
-    I().restoreAnchor(anchor);
+    // 捲動模式：有元素加偏移就用它（最精準）；從翻頁模式來的只有文字位置
+    if (anchor.id && typeof anchor.delta === 'number' && document.getElementById(anchor.id)) {
+      I().restoreAnchor(anchor);
+      return;
+    }
+    if (anchor.sec) {
+      const r = anchorRect(anchor);
+      if (r) { window.scrollTo(0, Math.max(0, window.scrollY + r.top - 24)); return; }
+    }
+    if (typeof anchor.y === 'number') { I().restoreAnchor(anchor); return; }
+    window.scrollTo(0, 0);
   }
 
   // 給 app.js 的「寬度改變時守住閱讀位置」用
@@ -449,9 +577,17 @@
 
   function currentChapter() {
     let found = null;
-    for (const m of BK.markers) {
-      if (m.el.getBoundingClientRect().top <= 120) found = m.index;
-      else break;
+    if (BK.paged) {
+      const first = firstCol();
+      for (const m of BK.markers) {
+        if (colOf(m.el) <= first) found = m.index;
+        else break;
+      }
+    } else {
+      for (const m of BK.markers) {
+        if (m.el.getBoundingClientRect().top <= 120) found = m.index;
+        else break;
+      }
     }
     if (found == null && BK.markers.length) found = BK.markers[0].index;
     return found;
@@ -471,11 +607,277 @@
     toSwift(msg);
   }
 
-  window.addEventListener('scroll', () => {
+  const onBookScroll = () => {
     if (!BK.active || BK.fixed) return;
     clearTimeout(positionTimer);
-    positionTimer = setTimeout(() => reportPosition(false), 400);
-  }, { passive: true });
+    positionTimer = setTimeout(() => { reportPosition(false); updateIndicators(); }, 400);
+  };
+  window.addEventListener('scroll', onBookScroll, { passive: true });
+  content.addEventListener('scroll', onBookScroll, { passive: true });   // 翻頁模式
+
+  /* ── 翻頁模式（docs/SPEC.md 13.12）──────────────────────── */
+
+  const pageLeft = document.createElement('div');
+  pageLeft.id = 'mb-page-left';
+  pageLeft.className = 'mb-pageinfo';
+  const pageRight = document.createElement('div');
+  pageRight.id = 'mb-page-right';
+  pageRight.className = 'mb-pageinfo';
+  const turnPrev = document.createElement('div');
+  turnPrev.id = 'mb-turn-prev';
+  turnPrev.className = 'mb-turn';
+  turnPrev.textContent = '‹';
+  const turnNext = document.createElement('div');
+  turnNext.id = 'mb-turn-next';
+  turnNext.className = 'mb-turn';
+  turnNext.textContent = '›';
+  document.body.append(pageLeft, pageRight, turnPrev, turnNext);
+  turnPrev.addEventListener('click', () => { closePopover(); turnPage(-1); });
+  turnNext.addEventListener('click', () => { closePopover(); turnPage(1); });
+
+  let doubleNow = false;    // 實際顯示雙頁（選了雙頁、而且欄夠寬）
+
+  /* 滿版的封面與書名頁：多欄版面裡的圖撐不到上下留白之外（容器上下不能有 padding，見 base.css），
+   * 所以停在這種頁面時，另外蓋一層把圖從頁面頂端放到底部。雙頁時只蓋那一側。
+   * 翻頁滑動中先拿掉，停下來才蓋上，滑動時看到的是版面裡原本的小圖。 */
+  const fullpage = document.createElement('div');
+  fullpage.id = 'mb-fullpage';
+  document.body.appendChild(fullpage);
+
+  function hideFullpage() {
+    fullpage.classList.remove('show');
+    fullpage.innerHTML = '';
+    pageLeft.style.visibility = '';
+    pageRight.style.visibility = '';
+  }
+
+  function showFullpage() {
+    hideFullpage();
+    if (!BK.paged) return;
+    const pages = [...content.querySelectorAll(':scope > section.mb-imgpage')];
+    if (!pages.length) return;
+    const first = firstCol();
+    const g = geom();
+    let any = false;
+    for (let i = 0; i < g.n; i++) {
+      const slot = document.createElement('div');
+      slot.className = 'mb-fullpage-slot';
+      const sec = pages.find((p) => colOf(p) === first + i);
+      if (sec) {
+        const pic = sec.querySelector('img, svg').cloneNode(true);
+        pic.removeAttribute('id');
+        slot.classList.add('filled');
+        slot.appendChild(pic);
+        any = true;
+      }
+      fullpage.appendChild(slot);
+    }
+    fullpage.style.gridTemplateColumns = `repeat(${g.n}, 1fr)`;
+    if (any) fullpage.classList.add('show'); else fullpage.innerHTML = '';
+    // 滿版的那一側不顯示頁碼：左下的本章頁碼在第一頁、右下的百分比在最後一頁
+    const slots = [...fullpage.children];
+    pageLeft.style.visibility = slots[0] && slots[0].classList.contains('filled') ? 'hidden' : '';
+    pageRight.style.visibility = slots.length && slots[slots.length - 1].classList.contains('filled') ? 'hidden' : '';
+  }
+
+  /* 翻頁模式由 #content 自己橫向捲動（scrollLeft），不是整份文件 —— 根元素設了
+   * overflow:hidden 之後，WebKit 不讓文件橫向捲動，window.scrollTo 會沒反應。
+   * 欄寬與一欄的跨距：欄距是左右留白的兩倍，所以單頁一欄＋欄距＝一個畫面寬 */
+  function geom() {
+    const cs = getComputedStyle(content);
+    const side = parseFloat(cs.paddingLeft) || 0;
+    const vw = document.documentElement.clientWidth;
+    const n = doubleNow ? 2 : 1;
+    const gap = parseFloat(cs.columnGap) || side * 2;
+    const colW = (vw - side * 2 - (n - 1) * gap) / n;
+    return { side, top: content.getBoundingClientRect().top, vw, n, gap, stride: colW + gap };
+  }
+
+  /* 選了雙頁但每頁不足 30 個字：暫時顯示單頁，設定仍記著雙頁 */
+  function applyLayout() {
+    const html = document.documentElement;
+    html.classList.toggle('mb-paged', BK.paged);
+    let dbl = false;
+    if (BK.paged && BK.layout === 'double') {
+      const fs = parseFloat(getComputedStyle(document.body).fontSize) || 17;
+      const side = parseFloat(getComputedStyle(content).paddingLeft) || 0;
+      dbl = (document.documentElement.clientWidth - side * 4) / 2 >= fs * 30;
+    }
+    doubleNow = dbl;
+    html.classList.toggle('mb-double', dbl);
+    if (!BK.paged && content.scrollLeft) content.scrollLeft = 0;
+    fixPushedLines();
+  }
+
+  /* 頁尾殘字（WebKit 的繪製問題）：段落開頭剛好落在頁尾、放不下一整行時，WebKit 把第一行
+   * 推到下一頁，卻仍在上一頁底部畫出那一行的一截（連首行縮排都看得到）。偵測這種「方框在
+   * 上一頁只有不到一行高」的區塊，讓它直接從下一頁開始 —— 那一行本來就在下一頁，排版結果
+   * 不變，後面的內容也不會位移，只是殘影沒了。用裁切擋不乾淨：殘影與正常的最後一行可能重疊。
+   * 版面每次改變（字級、欄寬、單雙頁、圖片載入）都要先拿掉舊的標記再重新量。 */
+  const BLOCKS = 'p, li, h1, h2, h3, h4, h5, h6, blockquote, dd, dt, figcaption, pre';
+  function fixPushedLines() {
+    content.querySelectorAll('.mb-pushed').forEach((el) => el.classList.remove('mb-pushed'));
+    if (!BK.paged) return;
+    const pushed = [];
+    for (const el of content.querySelectorAll(BLOCKS)) {
+      const rects = el.getClientRects();
+      if (rects.length < 2) continue;
+      const lh = parseFloat(getComputedStyle(el).lineHeight) || 30;
+      if (rects[0].height < lh - 1) pushed.push(el);
+    }
+    pushed.forEach((el) => el.classList.add('mb-pushed'));
+  }
+  BK.fixPushedLines = () => fixPushedLines();
+
+  /* 字型晚到（冷啟動時霞鶩文楷要好幾秒才解完）會讓整本重新斷行，前面量的就不準了：
+   * 字型載完就重量一次，並停在原本讀到的地方 */
+  if (document.fonts && document.fonts.addEventListener) {
+    document.fonts.addEventListener('loadingdone', () => {
+      if (!BK.paged) return;
+      const anchor = captureBookAnchor();
+      fixPushedLines();
+      if (anchor) restoreBookAnchor(anchor);
+      updateIndicators();
+    });
+  }
+
+  /* 每次換頁再檢查這一頁的頁尾：只看畫面上那一兩欄底部的區塊，很便宜，
+   * 補上任何漏網的情況（版面在全面檢查之後又被別的原因改變） */
+  function fixPushedOnView() {
+    if (!BK.paged) return;
+    const g = geom();
+    const bottom = content.getBoundingClientRect().bottom;
+    for (let c = 0; c < g.n; c++) {
+      for (const dy of [3, 10, 20]) {
+        const x = g.side + c * g.stride + 40;
+        const el = document.elementFromPoint(x, bottom - dy);
+        const block = el && el.closest && el.closest(BLOCKS);
+        if (!block || !content.contains(block) || block.classList.contains('mb-pushed')) continue;
+        const rects = block.getClientRects();
+        const lh = parseFloat(getComputedStyle(block).lineHeight) || 30;
+        if (rects.length > 1 && rects[0].height < lh - 1) block.classList.add('mb-pushed');
+      }
+    }
+  }
+
+  function colOfX(left) {
+    const g = geom();
+    const origin = content.getBoundingClientRect().left;
+    return Math.max(0, Math.floor((left - origin + content.scrollLeft - g.side + 1) / g.stride));
+  }
+  function colOf(el) {
+    const r = (el.getClientRects()[0]) || el.getBoundingClientRect();
+    return colOfX(r.left);
+  }
+  const viewOfCol = (col) => doubleNow ? Math.floor(col / 2) : col;
+  const viewOfX = (left) => viewOfCol(colOfX(left));
+  function curView() { return Math.round(content.scrollLeft / geom().vw); }
+  function firstCol() { return doubleNow ? curView() * 2 : curView(); }
+  function lastView() {
+    const end = content.querySelector(':scope > .mb-end');
+    return end ? viewOfCol(colOf(end)) : 0;
+  }
+
+  /* 翻頁的 0.2 秒水平滑動。連按時從上一次的目標接著算，不會少翻 */
+  let anim = null, targetView = 0;
+  function goView(v, animate) {
+    v = Math.max(0, Math.min(v, lastView()));
+    targetView = v;
+    const x = v * geom().vw;
+    if (anim) { cancelAnimationFrame(anim); anim = null; }
+    hideFullpage();
+    const from = content.scrollLeft;
+    if (!animate || Math.abs(x - from) < 2 || Math.abs(x - from) > geom().vw * 1.5) {
+      content.scrollLeft = x;
+      updateIndicators();
+      return;
+    }
+    const t0 = performance.now();
+    const step = (t) => {
+      const k = Math.min(1, (t - t0) / 200);
+      content.scrollLeft = from + (x - from) * (1 - Math.pow(1 - k, 3));
+      if (k < 1) anim = requestAnimationFrame(step);
+      else { anim = null; updateIndicators(); }
+    };
+    anim = requestAnimationFrame(step);
+  }
+
+  function turnPage(step) {
+    if (!BK.paged) return;
+    goView((anim ? targetView : curView()) + step, true);
+  }
+
+  /* 目前這一頁在哪一章（spine 檔）、那一章從第幾欄到第幾欄 */
+  function chapterSpan() {
+    const secs = [...content.querySelectorAll(':scope > section.mb-chapter')];
+    const starts = secs.map(colOf);
+    const first = firstCol();
+    let idx = 0;
+    starts.forEach((c, i) => { if (c <= first) idx = i; });
+    const end = content.querySelector(':scope > .mb-end');
+    const lastCol = end ? colOf(end) : first;
+    const stop = idx + 1 < starts.length ? starts[idx + 1] - 1 : lastCol;
+    return { secs, idx, start: starts[idx] || 0, end: Math.max(starts[idx] || 0, stop) };
+  }
+
+  function gotoChapterEdge(dir) {
+    const s = chapterSpan();
+    goView(viewOfCol(dir < 0 ? s.start : s.end), true);
+  }
+
+  /* 全書百分比：以文字位置算，不用頁數（頁數會隨字級、欄寬、單雙頁改變） */
+  function percent() {
+    if (curView() >= lastView()) return 100;
+    const secs = [...content.querySelectorAll(':scope > section.mb-chapter')];
+    const total = secs.reduce((n, s) => n + s.textContent.length, 0) || 1;
+    const range = readingPoint();
+    const sec = range ? sectionOf(range.startContainer) : secs[chapterSpan().idx];
+    let before = 0;
+    for (const s of secs) { if (s === sec) break; before += s.textContent.length; }
+    const inside = range && sec ? offsetIn(sec, range.startContainer, range.startOffset) : 0;
+    return Math.min(99, Math.floor((before + inside) / total * 100));
+  }
+
+  function updateIndicators() {
+    if (!BK.paged) { hideFullpage(); return; }
+    fixPushedOnView();
+    if (!anim) showFullpage();
+    const s = chapterSpan();
+    const total = s.end - s.start + 1;
+    const at = Math.min(total, Math.max(1, firstCol() - s.start + 1));
+    pageLeft.textContent = `本章 ${at}／${total} 頁`;
+    pageRight.textContent = `${percent()}%`;
+  }
+
+  BK.reveal = (el) => { if (el) goView(viewOfCol(colOf(el)), false); };
+  BK.elementView = (el) => viewOfCol(colOf(el));
+  BK.currentView = () => curView();
+
+  MB.setBookLayout = function (mode) {
+    const anchor = BK.active && !BK.fixed ? captureBookAnchor() : null;
+    BK.layout = mode;
+    if (!BK.active) return;
+    if (BK.fixed) { layoutFixed(); reportPosition(false); return; }
+    applyLayout();
+    requestAnimationFrame(() => {
+      if (anchor) restoreBookAnchor(anchor);
+      updateIndicators();
+      reportPosition(false);
+    });
+  };
+
+  /* 字級、字體、主題一變，分頁跟著重排：記住讀到哪裡，排完翻回那一頁 */
+  ['setFontSize', 'setFontFamily', 'setTheme', 'setUserTheme', 'setUserFonts'].forEach((name) => {
+    const original = MB[name];
+    MB[name] = function (...args) {
+      const anchor = BK.paged ? captureBookAnchor() : null;
+      original.apply(this, args);
+      if (anchor) requestAnimationFrame(() => { applyLayout(); restoreBookAnchor(anchor); });
+    };
+  });
+
+  /* 視窗或分隔線改變欄寬：先重新判斷單雙頁，app.js 會在下一個 frame 回到原本的位置 */
+  window.addEventListener('resize', () => { if (BK.active && !BK.fixed) applyLayout(); });
 
   /* ── 連結與注腳浮框 ─────────────────────────────────── */
 
@@ -517,7 +919,7 @@
       showPopover(a, block);
     } else {
       closePopover();
-      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      I().reveal(target, true);
     }
   });
 
@@ -551,7 +953,7 @@
     e.preventDefault();
     const t = document.getElementById(a.getAttribute('href').slice(1));
     closePopover();
-    if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (t) I().reveal(t, true);
   });
 
   document.addEventListener('mousedown', (e) => {
@@ -586,9 +988,9 @@
     reportPosition(false);
   }
 
-  /* 欄寬夠才跨頁：單頁會小於約 400pt 就退回單頁 */
+  /* 選了雙頁、書允許跨頁、欄寬也夠（單頁不小於約 400pt）才跨頁；「捲動」當作單頁 */
   function useSpread() {
-    return fx.spread && content.clientWidth / 2 >= 400;
+    return BK.layout === 'double' && fx.spread && content.clientWidth / 2 >= 400;
   }
 
   function spreadsFor(spread) {
@@ -687,39 +1089,62 @@
     }
   }
 
-  /* ← 上一頁、→ 下一頁。右翻左的固定版面書反過來：按鍵跟著畫面走，← 前往左邊那頁
-   * （也就是下一頁），跟紙本與漫畫閱讀器一樣。
-   * 可重排的書一律橫排顯示，不管原書是不是右翻左，← 都是上一頁。
-   * 可重排的書「一頁」是一個畫面高，留兩行重疊，翻過去還接得上剛才讀到的地方。 */
+  /* 翻頁鍵（docs/SPEC.md 13.5、13.9、13.12）
+   * ← 上一頁、→ 下一頁。右翻左的固定版面書反過來：按鍵跟著畫面走，← 前往左邊那頁。
+   * 翻頁模式另外認空白鍵、PageUp／PageDown、↑／↓，Home／End 跳本章頭尾。
+   * 捲動模式的「一頁」是一個畫面高、留兩行重疊。 */
   document.addEventListener('keydown', (e) => {
-    if (!BK.active || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey && e.key !== ' ') return;
+    if (!BK.active || e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && !BK.fixed) return;
-    const step = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0;
-    if (step && !BK.fixed) {
+    const k = e.key;
+    let step = k === 'ArrowRight' ? 1 : k === 'ArrowLeft' ? -1 : 0;
+
+    if (BK.fixed) {
+      if (step) step = fx.rtl ? -step : step;
+      else if (k === ' ') step = e.shiftKey ? -1 : 1;
+      else if (k === 'PageDown') step = 1;
+      else if (k === 'PageUp') step = -1;
+      if (!step) return;
       e.preventDefault();
-      closePopover();
-      const lineGap = parseFloat(getComputedStyle(document.body).lineHeight) || 32;
-      window.scrollBy({ top: step * Math.max(100, window.innerHeight - lineGap * 2), behavior: 'auto' });
+      turn(step);
       return;
     }
-    if (step) { e.preventDefault(); turn(fx.rtl ? -step : step); }
-    else if (e.key === ' ') { e.preventDefault(); turn(e.shiftKey ? -1 : 1); }
-    else if (e.key === 'PageDown') { e.preventDefault(); turn(1); }
-    else if (e.key === 'PageUp') { e.preventDefault(); turn(-1); }
+
+    if (BK.paged) {
+      let edge = 0;
+      if (!step) {
+        if (k === ' ') step = e.shiftKey ? -1 : 1;
+        else if (k === 'PageDown' || k === 'ArrowDown') step = 1;
+        else if (k === 'PageUp' || k === 'ArrowUp') step = -1;
+        else if (k === 'Home') edge = -1;
+        else if (k === 'End') edge = 1;
+      }
+      if (!step && !edge) return;
+      e.preventDefault();
+      closePopover();
+      if (edge) gotoChapterEdge(edge); else turnPage(step);
+      return;
+    }
+
+    if (!step || e.shiftKey) return;
+    e.preventDefault();
+    closePopover();
+    const lineGap = parseFloat(getComputedStyle(document.body).lineHeight) || 32;
+    window.scrollBy({ top: step * Math.max(100, window.innerHeight - lineGap * 2), behavior: 'auto' });
   });
 
   /* 觸控板左右滑：累積到一個門檻才翻一頁，翻完冷卻一下，免得一次滑過好幾頁 */
   let wheelAcc = 0, wheelLock = 0;
   window.addEventListener('wheel', (e) => {
-    if (!BK.fixed) return;
+    if (!BK.fixed && !BK.paged) return;
     e.preventDefault();
     const now = Date.now();
     if (now < wheelLock) return;
     const dx = e.deltaX, dy = e.deltaY;
-    wheelAcc += Math.abs(dx) > Math.abs(dy) ? dx * (fx.rtl ? -1 : 1) : dy;
+    wheelAcc += Math.abs(dx) > Math.abs(dy) ? dx * (BK.fixed && fx.rtl ? -1 : 1) : dy;
     if (Math.abs(wheelAcc) > 80) {
-      turn(wheelAcc > 0 ? 1 : -1);
+      closePopover();
+      if (BK.fixed) turn(wheelAcc > 0 ? 1 : -1); else turnPage(wheelAcc > 0 ? 1 : -1);
       wheelAcc = 0;
       wheelLock = now + 450;
     }

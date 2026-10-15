@@ -50,6 +50,11 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(compareEnabled, forKey: Keys.compare) }
     }
 
+    /// 書那欄的顯示方式：捲動、翻頁單頁、翻頁雙頁（docs/SPEC.md 13.12）。第一次安裝預設單頁。
+    var bookLayout: BookLayout {
+        didSet { defaults.set(bookLayout.rawValue, forKey: Keys.bookLayout) }
+    }
+
     /// 雙欄的分隔線位置：書那欄佔內容區的比例。
     var splitRatio: Double {
         didSet { defaults.set(splitRatio, forKey: Keys.splitRatio) }
@@ -112,6 +117,7 @@ final class AppSettings: ObservableObject {
         static let recents = "recentDocuments"
         static let compare = "compareEnabled"
         static let splitRatio = "splitRatio"
+        static let bookLayout = "bookLayout"
         static let bookPairs = "bookPairs"
         static let lastNoteByFolder = "lastNoteByFolder"
         static let bookPositions = "bookPositions"
@@ -126,6 +132,7 @@ final class AppSettings: ObservableObject {
         sidebarMode = SidebarMode(rawValue: defaults.string(forKey: Keys.sidebarMode) ?? "") ?? .outline
         compareEnabled = defaults.object(forKey: Keys.compare) as? Bool ?? true
         splitRatio = defaults.object(forKey: Keys.splitRatio) as? Double ?? 0.5
+        bookLayout = BookLayout(rawValue: defaults.string(forKey: Keys.bookLayout) ?? "") ?? .single
         bookPairs = defaults.dictionary(forKey: Keys.bookPairs) as? [String: String] ?? [:]
         lastNoteByFolder = defaults.dictionary(forKey: Keys.lastNoteByFolder) as? [String: String] ?? [:]
         bookPositions = defaults.dictionary(forKey: Keys.bookPositions) as? [String: [String: Any]] ?? [:]

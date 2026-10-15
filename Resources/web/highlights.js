@@ -307,11 +307,18 @@
    * 建立時碰到既有標記就整條合併（畫線時手不準）；擦除只擦選到的部分（要精細）。
    */
   const touched = (s, e) => anchored().filter((it) => it.start < e && it.end > s);
+
+  /* 緊接著、中間只隔空白或換行、而且同色的標記（docs/SPEC.md 12.2）。
+   * 翻頁模式下一句話被切在頁尾，翻頁前後分兩次標，靠這條連成一筆。不同色不算：
+   * 刻意把相鄰兩句標成不同顏色時要能分開。 */
+  const adjacent = (s, e, style) => anchored().filter((it) => it.style === style &&
+    ((it.end <= s && !idx.raw.slice(it.end, s).trim()) || (it.start >= e && !idx.raw.slice(e, it.start).trim())));
   const solid = (s, e) => s < e && idx.raw.slice(s, e).trim().length > 0;
 
   function create(range, style) {
     let { start, end } = range;
-    const hit = touched(start, end);
+    const overlap = touched(start, end);
+    const hit = [...overlap, ...adjacent(start, end, style).filter((it) => !overlap.includes(it))];
     for (const it of hit) { start = Math.min(start, it.start); end = Math.max(end, it.end); }
     const note = hit.map((it) => it.note).filter(Boolean).join('\n\n');   // 合併時註記依原文順序串接
     H.items = H.items.filter((it) => !hit.includes(it));
@@ -657,6 +664,7 @@
     hideTip();
   });
   window.addEventListener('scroll', hideTip, { passive: true });
+  content.addEventListener('scroll', hideTip, { passive: true });   // 書的翻頁模式
 
   /* ── 警示列：寫入失敗、唯讀的原因 ───────────────────── */
   banner.addEventListener('click', (e) => {
@@ -734,7 +742,7 @@
     hideBar();
     const marks = [...content.querySelectorAll(`mark.mb-hl[data-id="${id}"]`)];
     if (!marks.length) return;
-    marks[0].scrollIntoView({ block: 'center', behavior: 'smooth' });
+    MB.internal.reveal(marks[0], true, 'center');
     setTimeout(() => marks.forEach((m) => {
       m.classList.remove('mb-flash');
       void m.offsetWidth;                              // 重設動畫

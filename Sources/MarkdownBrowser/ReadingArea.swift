@@ -116,10 +116,21 @@ private struct BookColumn: View {
     var body: some View {
         VStack(spacing: 0) {
             if book.epub != nil {
-                BookChapterMenu(state: state, book: book)
-                    .frame(height: 26)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 3)
+                HStack(spacing: 8) {
+                    BookChapterMenu(state: state, book: book)
+                        .frame(height: 26)
+                    // 捲動｜單頁｜雙頁（docs/SPEC.md 13.12）。固定版面的書「捲動」當作單頁
+                    Picker("", selection: $state.bookLayout) {
+                        ForEach(BookLayout.allCases, id: \.self) { Text($0.name).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .fixedSize()
+                    .help("書的顯示方式：捲動、單頁、雙頁")
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 3)
                 Divider()
             }
             WebPane(state: book)

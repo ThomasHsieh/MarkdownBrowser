@@ -224,6 +224,7 @@ struct WebPane: NSViewRepresentable {
         }
 
         func scrollToChapter(_ index: Int) { eval("MB.scrollToChapter(\(index))") }
+        func setBookLayout(_ mode: String) { eval("MB.setBookLayout(\(literal(mode)))") }
         func syncTo(_ request: [String: Any]) { eval("MB.syncTo(\(json(request)))") }
         func revealPendingSync() { eval("MB.revealPendingSync()") }
         func toast(_ text: String) { eval("MB.toast(\(literal(text)))") }

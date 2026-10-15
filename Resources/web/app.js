@@ -152,9 +152,18 @@ MB.setUserFonts = function (css) {
   document.getElementById('user-fonts').textContent = css || '';
 };
 
+/* 把元素帶進畫面。書的翻頁模式是「翻到它所在的那一頁」，不能用 scrollIntoView ——
+ * 那會停在兩頁中間。所有跳轉（同步、大綱、搜尋、標記、注腳連結）都走這裡。 */
+function reveal(el, smooth, block) {
+  if (!el) return;
+  const book = window.MBBook;
+  if (book && book.paged) { book.reveal(el); return; }
+  el.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: block || 'start' });
+}
+
 MB.scrollToHeading = function (id) {
   const el = document.getElementById(id);
-  if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); settleOn(el); }
+  if (el) { reveal(el, true); settleOn(el); }
 };
 
 /* ── 對照同步（docs/SPEC.md 13.6）──────────────────────────
@@ -241,8 +250,13 @@ function settleOn(target) {
   const started = Date.now();
   const fix = () => {
     if (lastUserInput > started || !target.isConnected) return;
-    const top = target.getBoundingClientRect().top;
-    if (Math.abs(top) > 40) target.scrollIntoView({ block: 'start' });
+    const book = window.MBBook;
+    if (book && book.paged) {
+      if (book.elementView(target) !== book.currentView()) book.reveal(target);
+    } else {
+      const top = target.getBoundingClientRect().top;
+      if (Math.abs(top) > 40) target.scrollIntoView({ block: 'start' });
+    }
     keptAnchor = anchorNow();
   };
   setTimeout(fix, 700);
@@ -251,7 +265,7 @@ function settleOn(target) {
 
 function landSync(target, req, matched, missText) {
   const background = !!req.background;
-  if (target) target.scrollIntoView({ behavior: background ? 'auto' : 'smooth', block: 'start' });
+  if (target) reveal(target, !background);
   else window.scrollTo({ top: 0, behavior: background ? 'auto' : 'smooth' });
   settleOn(target);
   const note = !matched && !req.quiet ? missText : null;
@@ -341,17 +355,20 @@ function anchorRestore(anchor) {
 }
 
 let keepTimer = null;
-window.addEventListener('scroll', () => {
+const keepOnScroll = () => {
   if (Date.now() < resizing) return;
   clearTimeout(keepTimer);
   keepTimer = setTimeout(() => { if (Date.now() >= resizing) keptAnchor = anchorNow(); }, 150);
-}, { passive: true });
+};
+window.addEventListener('scroll', keepOnScroll, { passive: true });
+content.addEventListener('scroll', keepOnScroll, { passive: true });   // 書的翻頁模式由 #content 捲動
 
 window.addEventListener('resize', () => {
   if (window.innerWidth === lastWidth) return;   // 只有高度變了，斷行不變
   lastWidth = window.innerWidth;
   resizing = Date.now() + 300;
-  if (keptAnchor) anchorRestore(keptAnchor);
+  // 晚一個 frame：書的翻頁模式要先在自己的 resize 裡重新判斷單雙頁，再回位
+  if (keptAnchor) { const a = keptAnchor; requestAnimationFrame(() => anchorRestore(a)); }
 });
 
 /* ── 大綱高亮 ───────────────────────────────────────── */
@@ -361,6 +378,8 @@ window.addEventListener('scroll', () => {
   if (scrollTimer) return;
   scrollTimer = setTimeout(() => {
     scrollTimer = null;
+    // 翻頁模式的「目前標題」看的是頁，不是畫面頂端；側欄用不到書的這個值，直接不報
+    if (window.MBBook && window.MBBook.paged) return;
     const headings = content.querySelectorAll('h1, h2, h3, h4');
     let active = null;
     for (const el of headings) {
@@ -445,7 +464,7 @@ function highlightCurrent(jump) {
   const hit = findState.hits[findState.index];
   if (!hit) return;
   hit.classList.add('mb-current');
-  if (jump) hit.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  if (jump) reveal(hit, true, 'center');
   findCount.textContent = `${findState.index + 1}／${findState.hits.length}`;
 }
 
@@ -483,6 +502,7 @@ MB.internal = {
   landSync,
   settleOn,
   afterLayout,
+  reveal,
   userMoved(since) { return lastUserInput > (since || renderedAt); },
   markRendered() { renderedAt = Date.now(); },
   toSwift,

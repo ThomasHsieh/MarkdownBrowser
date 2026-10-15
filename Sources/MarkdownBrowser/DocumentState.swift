@@ -9,6 +9,21 @@ enum PaneSide: String {
     case note
 }
 
+/// 書那欄的顯示方式（docs/SPEC.md 13.12）。只有書那欄有，心得一律捲動。
+enum BookLayout: String, CaseIterable {
+    case scroll
+    case single
+    case double
+
+    var name: String {
+        switch self {
+        case .scroll: return "捲動"
+        case .single: return "單頁"
+        case .double: return "雙頁"
+        }
+    }
+}
+
 /// 一個視窗的全部狀態：讀哪份心得、側欄內容、這個視窗的主題與字體，
 /// 以及對照模式下左邊那本書（`book`）。
 ///
@@ -81,6 +96,14 @@ final class DocumentState: PaneDocument {
         didSet { settings.compareEnabled = compareEnabled }
     }
 
+    /// 書那欄的顯示方式。每個視窗各自，新視窗沿用最後一次的選擇。
+    @Published var bookLayout: BookLayout {
+        didSet {
+            settings.bookLayout = bookLayout
+            book.bridge?.setBookLayout(bookLayout.rawValue)
+        }
+    }
+
     /// 書那欄佔內容區的比例。
     @Published var splitRatio: Double {
         didSet { settings.splitRatio = splitRatio }
@@ -142,6 +165,7 @@ final class DocumentState: PaneDocument {
         sidebarMode = settings.sidebarMode
         compareEnabled = settings.compareEnabled
         splitRatio = settings.splitRatio
+        bookLayout = settings.bookLayout
         book = BookPane()
         super.init()
         book.host = self
@@ -629,6 +653,7 @@ protocol WebBridge: AnyObject {
     func renderBook(_ payload: [String: Any], keepScroll: Bool, highlights: [String: Any]?)
     func renderBookError(_ text: String)
     func scrollToChapter(_ index: Int)
+    func setBookLayout(_ mode: String)
     func syncTo(_ request: [String: Any])
     func revealPendingSync()
     func toast(_ text: String)

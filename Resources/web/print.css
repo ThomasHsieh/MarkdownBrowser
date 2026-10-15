@@ -60,6 +60,15 @@ mark.mb-hl strong, mark.mb-hl b { color: var(--accent) !important; }
 mark.mb-hl.mb-note-end::after { display: none !important; }
 #hl-bar, #hl-tip, #hl-banner { display: none !important; }
 #mb-toast, #mb-footnote { display: none !important; }
+
+/* 列印一律用捲動的版面（docs/SPEC.md 13.12），翻頁模式不影響 */
+html.mb-paged, html.mb-paged body { overflow: visible !important; height: auto !important; }
+html.mb-paged #content {
+  column-count: auto !important;
+  height: auto !important;
+  padding: 0 !important;
+}
+.mb-pageinfo, .mb-turn, #mb-fullpage { display: none !important; }
 .mb-book .mb-b { color: var(--accent) !important; }
 
 h1, h2, h3, h4 {

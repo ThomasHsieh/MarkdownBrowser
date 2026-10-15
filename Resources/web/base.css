@@ -392,6 +392,10 @@ mark.mb-hl.mb-flash { animation: mb-flash 1.1s ease-in-out; }
 mark.mb-hl .mb-b { color: var(--hl-accent); }
 .mb-book .mb-nb { color: var(--fg); }
 .mb-book .mb-i { font-style: italic; }
+/* 跟章名同一層標籤、但原書字級明顯較小的副標：降一級顯示 */
+.mb-book h1.mb-subhead { font-size: var(--h3-size); }
+.mb-book h2.mb-subhead { font-size: var(--h3-size); }
+.mb-book h3.mb-subhead, .mb-book h4.mb-subhead { font-size: var(--h4-size); }
 .mb-book .mb-center { text-align: center; }
 .mb-book .mb-right { text-align: right; }
 .mb-book .mb-left { text-align: start; }
@@ -495,3 +499,109 @@ mark.mb-hl .mb-b { color: var(--hl-accent); }
   transition: opacity 0.2s, transform 0.2s;
 }
 #mb-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ── 翻頁模式（docs/SPEC.md 13.12）──────────────────────
+ * CSS 多欄排版：一欄就是一頁，欄寬等於頁寬，翻頁就是橫向移動一個畫面寬，
+ * 所以前後兩頁的文字不會重複。欄距是左右留白的兩倍，單頁時一欄＋欄距剛好一個畫面寬，
+ * 雙頁時兩欄＋兩個欄距剛好一個畫面寬。 */
+html.mb-paged {
+  --pg-side: clamp(48px, 6vw, 120px);
+  --pg-top: 64px;
+  --pg-bottom: 64px;
+}
+html.mb-paged, html.mb-paged body { overflow: hidden; height: 100%; }
+html.mb-paged #content {
+  /* 多欄容器上下不能有 padding：WebKit 算分頁高度時會把上下 padding 再扣一次，排版用的頁高
+     比畫出來的頁矮了一截（實測 751 的頁只排到 623）。結果是下一頁開頭那一行被畫進這一頁底部、
+     切掉一半變成殘字，段落中間也會冒出一行空白。所以頁高直接設成扣掉留白後的值，上方留白用
+     margin 推下來，左右才用 padding（橫向沒有這個問題） */
+  height: calc(100vh - var(--pg-top) - var(--pg-bottom));
+  margin-top: var(--pg-top);
+  overflow: hidden;
+  padding: 0 var(--pg-side);
+  column-count: 1;
+  column-gap: calc(var(--pg-side) * 2);
+  column-fill: auto;
+  orphans: 1;
+  widows: 1;
+}
+html.mb-paged.mb-double #content { column-count: 2; }
+
+/* 每一章從新的一頁開始；雙頁時就是下一個空頁，不強求左右頁 */
+html.mb-paged .mb-book section.mb-chapter + section.mb-chapter {
+  margin-top: 0;
+  break-before: column;
+  -webkit-column-break-before: always;
+}
+html.mb-paged .mb-book img,
+html.mb-paged .mb-book svg { max-height: calc(100vh - var(--pg-top) - var(--pg-bottom) - 4em); }
+html.mb-paged .mb-book img,
+html.mb-paged .mb-book figure,
+html.mb-paged .mb-book table { break-inside: avoid; }
+html.mb-paged .mb-book h1,
+html.mb-paged .mb-book h2,
+html.mb-paged .mb-book h3,
+html.mb-paged .mb-book h4 { break-after: avoid; }
+.mb-book .mb-end { height: 0; }
+html.mb-paged .mb-book .mb-pushed { break-before: column; -webkit-column-break-before: always; }
+
+/* 頁碼：底部留白裡的淡色小字。左下本章頁碼、右下全書百分比，對齊內文左右緣 */
+.mb-pageinfo {
+  display: none;
+  position: fixed;
+  bottom: calc(var(--pg-bottom) / 2 - 0.6em);
+  z-index: 5;
+  color: var(--muted);
+  font: 11px -apple-system, sans-serif;
+  pointer-events: none;
+  user-select: none;
+}
+#mb-page-left { left: var(--pg-side); }
+#mb-page-right { right: var(--pg-side); }
+
+/* 左右留白可以點：滑過時出現淡淡的 ‹ › */
+.mb-turn {
+  display: none;
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  width: var(--pg-side);
+  z-index: 6;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font: 300 30px -apple-system, sans-serif;
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  user-select: none;
+}
+.mb-turn:hover { opacity: 0.7; }
+#mb-turn-prev { left: 0; }
+#mb-turn-next { right: 0; }
+/* 只有一張圖的頁（封面、書名頁）：版面裡的圖填滿整頁欄高，滑動時看到的是它；
+   停下來後由 #mb-fullpage 從頁面頂端放到底部 */
+html.mb-paged .mb-book section.mb-imgpage { height: 100%; display: flex; align-items: center; justify-content: center; }
+/* 圖外面包的 figure、p、div 的上下邊距會把頁撐出一頁空白 */
+html.mb-paged .mb-book section.mb-imgpage * { margin: 0; padding: 0; }
+html.mb-paged .mb-book section.mb-imgpage img,
+html.mb-paged .mb-book section.mb-imgpage svg {
+  /* 不能用 100%：圖外面通常還包一層 div 或 p，百分比對到的是那層的 auto 高度，等於沒設，
+     圖照原尺寸排版就切到下一頁（書名頁的下半截出現在版權頁頂端） */
+  max-height: calc(100vh - var(--pg-top) - var(--pg-bottom));
+  max-width: 100%;
+}
+#mb-fullpage {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+}
+#mb-fullpage.show { display: grid; }
+.mb-fullpage-slot { display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.mb-fullpage-slot.filled { background: var(--bg); }
+.mb-fullpage-slot img,
+.mb-fullpage-slot svg { height: 100%; width: auto; max-width: 100%; object-fit: contain; }
+html.mb-paged .mb-pageinfo { display: block; }
+html.mb-paged .mb-turn { display: flex; }

@@ -38,6 +38,12 @@ final class BookPane: PaneDocument {
 
     override func folderDidChange() {}
 
+    /// 顯示方式要在書渲染之前就定好：先分頁再回到閱讀位置，不然會先捲動排一次、再翻頁排一次。
+    override func pushInitialState() {
+        bridge?.setBookLayout(host?.bookLayout.rawValue ?? BookLayout.single.rawValue)
+        super.pushInitialState()
+    }
+
     private func parse(_ url: URL) {
         do {
             epub = try EpubBook(url: url)

@@ -22,10 +22,12 @@
   --line-height: 1.75;
 
   /* 終端機沒有字級可用，標題只能靠顏色分層。 */
-  --h1-size: 1em;
-  --h2-size: 1em;
-  --h3-size: 1em;
-  --h4-size: 1em;
+  /* 標題字級比照閱讀主題。原本跟終端機一樣同字級、只靠顏色分層，
+     但整頁標題不顯眼，在書與長篇心得裡很難一眼看出段落結構 */
+  --h1-size: 1.75em;
+  --h2-size: 1.4em;
+  --h3-size: 1.18em;
+  --h4-size: 1.05em;
   --h1-color: var(--accent);
   --h2-color: var(--accent);
   --h3-color: var(--accent);

@@ -158,7 +158,7 @@ struct Sidebar: View {
                 } header: {
                     Picker("", selection: $state.sidebarMode) {
                         Text("大綱").tag(SidebarMode.outline)
-                        Text("標記 \(state.highlights.count)").tag(SidebarMode.highlights)
+                        Text("標記 \(highlightTotal)").tag(SidebarMode.highlights)
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
@@ -188,26 +188,56 @@ struct Sidebar: View {
         }
     }
 
-    /// 依所在標題分組、依原文順序；找不到位置的永遠排最後。
+    /// 分頁上的數字：心得與書的標記總數
+    private var highlightTotal: Int {
+        let book = state.book.documentURL != nil && state.book.epub?.fixedLayout != true ? state.book.highlights.count : 0
+        return state.highlights.count + book
+    }
+
+    /// 先列心得、再列書的標記（docs/SPEC.md 13.8）。讀書寫心得時最常回頭看的就是書裡畫的重點，
+    /// 只列心得的話，書裡畫了再多，分頁上也寫「標記 0」，看起來像沒存到。
     @ViewBuilder
     private var highlightList: some View {
-        let placed = state.highlights.filter { !$0.orphan }
-        let orphans = state.highlights.filter(\.orphan)
-        if state.highlights.isEmpty {
+        let showBook = state.book.documentURL != nil && state.book.epub?.fixedLayout != true
+        if state.highlights.isEmpty && (!showBook || state.book.highlights.isEmpty) {
             // 唯讀時（標記檔讀不出來、資料夾不能寫）講原因，別叫人去畫線
             Text(state.highlightsReadOnly ?? "這一章還沒有標記。選一段文字就能畫線。")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
+        } else {
+            if showBook {
+                sourceHeader("心得", count: state.highlights.count)
+            }
+            highlightGroups(of: state, prefix: "n")
+            if showBook && !state.book.highlights.isEmpty {
+                sourceHeader("書", count: state.book.highlights.count)
+                    .padding(.top, 8)
+                highlightGroups(of: state.book, prefix: "b")
+            }
         }
-        ForEach(groups(of: placed), id: \.key) { group in
+    }
+
+    private func sourceHeader(_ title: String, count: Int) -> some View {
+        Text("\(title)　\(count)")
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.secondary)
+    }
+
+    /// 一欄的標記：依所在標題分組、依原文順序；找不到位置的永遠排最後。
+    /// 點一列由那一欄自己捲（翻）過去並閃一下。
+    @ViewBuilder
+    private func highlightGroups(of pane: PaneDocument, prefix: String) -> some View {
+        let placed = pane.highlights.filter { !$0.orphan }
+        let orphans = pane.highlights.filter(\.orphan)
+        ForEach(groups(of: placed, prefix: prefix), id: \.key) { group in
             Text(group.title)
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .padding(.top, 4)
             ForEach(group.items) { item in
-                row(item, expanded: false)
-                    .onTapGesture { state.bridge?.revealHighlight(item.id) }
+                row(item, in: pane, expanded: false)
+                    .onTapGesture { pane.bridge?.revealHighlight(item.id) }
             }
         }
         if !orphans.isEmpty {
@@ -216,10 +246,11 @@ struct Sidebar: View {
                 .foregroundStyle(.orange)
                 .padding(.top, 6)
             ForEach(orphans) { item in
-                let open = expandedOrphans.contains(item.id)
-                row(item, expanded: open)
+                let key = prefix + item.id
+                let open = expandedOrphans.contains(key)
+                row(item, in: pane, expanded: open)
                     .onTapGesture {
-                        if open { expandedOrphans.remove(item.id) } else { expandedOrphans.insert(item.id) }
+                        if open { expandedOrphans.remove(key) } else { expandedOrphans.insert(key) }
                     }
             }
         }
@@ -227,7 +258,7 @@ struct Sidebar: View {
 
     private struct Group { let key: String; let heading: String?; let title: String; let items: [HighlightItem] }
 
-    private func groups(of items: [HighlightItem]) -> [Group] {
+    private func groups(of items: [HighlightItem], prefix: String) -> [Group] {
         var out: [Group] = []
         for item in items {
             if let last = out.last, last.heading == item.heading {
@@ -235,14 +266,14 @@ struct Sidebar: View {
                                            items: last.items + [item])
             } else {
                 // ForEach 的 id 加序號：理論上同一個標題不會被隔開出現兩次，但 slug 撞名時保險
-                out.append(Group(key: "\(item.heading ?? "")#\(out.count)", heading: item.heading,
+                out.append(Group(key: "\(prefix)\(item.heading ?? "")#\(out.count)", heading: item.heading,
                                  title: item.headingText ?? "（開頭）", items: [item]))
             }
         }
         return out
     }
 
-    private func row(_ item: HighlightItem, expanded: Bool) -> some View {
+    private func row(_ item: HighlightItem, in pane: PaneDocument, expanded: Bool) -> some View {
         HStack(alignment: .top, spacing: 6) {
             if item.style == "underline" {
                 Rectangle().fill(Color.primary).frame(width: 9, height: 1.5).padding(.top, 8)
@@ -266,14 +297,14 @@ struct Sidebar: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .contextMenu {
-            Button("拷貝原文") { state.copyToPasteboard(item.text) }
-            Button("拷貝註記") { state.copyToPasteboard(item.note) }
+            Button("拷貝原文") { pane.copyToPasteboard(item.text) }
+            Button("拷貝註記") { pane.copyToPasteboard(item.note) }
                 .disabled(item.note.isEmpty)
             Divider()
             Button(item.note.isEmpty ? "刪除" : "刪除（含註記）", role: .destructive) {
-                state.bridge?.deleteHighlight(item.id)
+                pane.bridge?.deleteHighlight(item.id)
             }
-            .disabled(state.highlightsReadOnly != nil)
+            .disabled(pane.highlightsReadOnly != nil)
         }
     }
 }

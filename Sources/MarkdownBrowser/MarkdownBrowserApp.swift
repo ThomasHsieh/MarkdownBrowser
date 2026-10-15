@@ -134,6 +134,10 @@ struct MarkdownBrowserApp: App {
 
             Divider()
 
+            Picker("書", selection: activeBinding(\.bookLayout, fallback: settings.bookLayout)) {
+                ForEach(BookLayout.allCases, id: \.self) { Text($0.name).tag($0) }
+            }
+
             Button(router.active?.isComparing == true ? "關閉對照書籍" : "對照書籍") { router.active?.toggleCompare() }
                 .keyboardShortcut("b", modifiers: [.command, .shift])
                 .disabled(!((router.active?.canCompare ?? false) || (router.active?.isComparing ?? false)))
