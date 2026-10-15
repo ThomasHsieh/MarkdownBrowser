@@ -87,17 +87,6 @@ struct MarkdownBrowserApp: App {
         }
 
         CommandGroup(after: .toolbar) {
-            Picker("主題", selection: activeBinding(\.theme, fallback: settings.theme)) {
-                ForEach(Array(settings.themes.enumerated()), id: \.element.id) { index, theme in
-                    if index < 2 {
-                        Text(theme.name).tag(theme.id)
-                            .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")))
-                    } else {
-                        Text(theme.name).tag(theme.id)
-                    }
-                }
-            }
-
             Picker("外觀", selection: activeBinding(\.appearance, fallback: settings.appearance)) {
                 ForEach(AppSettings.appearanceChoices, id: \.id) { choice in
                     Text(choice.name).tag(choice.id)
@@ -141,11 +130,6 @@ struct MarkdownBrowserApp: App {
             Button(router.active?.isComparing == true ? "關閉對照書籍" : "對照書籍") { router.active?.toggleCompare() }
                 .keyboardShortcut("b", modifiers: [.command, .shift])
                 .disabled(!((router.active?.canCompare ?? false) || (router.active?.isComparing ?? false)))
-
-            Divider()
-
-            Button("開啟設定資料夾") { settings.openConfigDirectory() }
-            Button("複製內建主題以供修改") { settings.exportBuiltInThemes() }
         }
     }
 

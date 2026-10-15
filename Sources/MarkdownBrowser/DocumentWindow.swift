@@ -10,11 +10,10 @@ struct DocumentWindow: View {
     /// 一個視窗一份。`@StateObject` 在每個視窗各自建立，不再是共用的單例。
     @StateObject private var state = DocumentState()
 
-    @ObservedObject private var settings = AppSettings.shared
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        ContentView(state: state, settings: settings)
+        ContentView(state: state)
             .background(WindowAccessor { window in
                 WindowRouter.shared.attach(state, to: window)
             })

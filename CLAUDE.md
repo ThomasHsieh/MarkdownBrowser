@@ -33,24 +33,24 @@ SwiftUI（視窗、選單、Finder 關聯、檔案監聽、側欄）
         │  evaluateJavaScript("MB.xxx(…)")  ↓
         │  webkit.messageHandlers.mb.postMessage({type, …})  ↑
         ▼
-WKWebView（內容區：markdown-it + base.css + themes/*.css，一欄一份）
+WKWebView（內容區：markdown-it + base.css，一欄一份）
         ├── highlights.js：標記與註記（docs/SPEC.md 第 12 節）
         └── book.js：EPUB 那欄（docs/SPEC.md 第 13 節）
 ```
 
 對照模式下一個視窗有兩欄（左書右心得），各自一個 WKWebView。
 
-Swift 端只做殼，**所有排版都在 CSS 裡**。切主題只是換 `<html>` 上一個
-`data-theme` 屬性，Swift 完全不知道主題長什麼樣。
+Swift 端只做殼，**所有排版都在 CSS 裡**。切字體、切明暗只是換 `<html>` 上一個
+屬性，Swift 完全不知道畫面長什麼樣。
 
 多視窗。Swift 端的狀態按「範圍」切，不是按功能切：
 
 | | 範圍 | 內容 |
 |---|---|---|
 | `PaneDocument` | 一欄一份 | 讀哪個檔、大綱、標記、sidecar、檔案監聽 |
-| `DocumentState` | 一個視窗一份 | 心得那欄（繼承 `PaneDocument`）＋側欄、主題、字體、字級、外觀、對照開關、`book` |
+| `DocumentState` | 一個視窗一份 | 心得那欄（繼承 `PaneDocument`）＋側欄、字體、字級、外觀、對照開關、`book` |
 | `BookPane` | 一個視窗一份 | 書那欄（繼承 `PaneDocument`），EPUB 解析結果與閱讀位置 |
-| `AppSettings` | 全 App（單例） | 新視窗的起始設定、最近開啟、自訂主題目錄 |
+| `AppSettings` | 全 App（單例） | 新視窗的起始設定、最近開啟 |
 | `WindowRouter` | 全 App（單例） | 誰開著、誰在前景、下一個檔案開到哪裡 |
 
 - 設定用 `@Published` + `didSet` 同時寫回 `AppSettings`（當新視窗的起始值）
@@ -97,20 +97,20 @@ EPUB 的規格在 `docs/SPEC.md` 第 13 節。最容易被改壞的：
 - 錨點是引文（exact／prefix／suffix／heading），**不存偏移量**。重載同一份文件時
   `render` 不帶 `highlights`，網頁端沿用記憶體裡的標記重新比對
 
-### 三個正交的軸
+### 兩個正交的軸
 
-主題、字體、外觀互不相干，各自是 `<html>` 上一個屬性：
+樣式只有一套（`base.css`，取捨見 `docs/SPEC.md` 4.2 節），沒有主題可選。
+字體與外觀互不相干，各自是 `<html>` 上一個屬性：
 
 | 軸 | 屬性 | 值 | 決定 |
 |---|---|---|---|
-| 主題 | `data-theme` | `reading`（預設）/ `terminal` / 自訂檔名 | 版面與配色 |
 | 字體 | `data-font` | `kai`（預設）/ `gothic` | 用哪套中文字 |
 | 外觀 | `data-appearance` | `light` / `dark`（`auto` 由 Swift 解析後才送） | 明暗那一組顏色 |
 
-三個軸都是**每個視窗各自的**，存在 UserDefaults 的那一份只是新視窗的起始值。
+兩個軸都是**每個視窗各自的**，存在 UserDefaults 的那一份只是新視窗的起始值。
 
-`base.css` 只放結構與 `--cjk` / `--cjk-mono` 的定義，顏色與字型一律由主題檔
-的 CSS 變數提供。`:root` 裡那份變數是安全網，正常不會被用到。
+顏色一律是 `base.css` 開頭的 CSS 變數：`:root` 是深色，`:root[data-appearance="light"]`
+覆寫淺色。規則裡不要寫死顏色，否則明暗切換會漏掉它。
 
 ## 不可違反的核心不變量
 
@@ -130,17 +130,15 @@ EPUB 的規格在 `docs/SPEC.md` 第 13 節。最容易被改壞的：
 - **新增 bridge 方法**：三處要一起改 —— `DocumentState.swift` 底部的 `WebBridge`
   protocol、`WebPane.Coordinator` 的實作、`app.js` 的 `MB.xxx`（標記相關的在
   `highlights.js`，書相關的在 `book.js`）
-- **新增主題 CSS 變數**：`base.css` 的 `:root` 補安全網值，兩個主題檔都要提供。
-  標記的 `--hl-*` 也一樣，淺色模式那組要另外驗算標記內粗體（`--hl-accent`）的對比
-- **改主題顏色**：淺色覆寫寫在**各自的主題檔裡**（
-  `:root[data-theme="X"][data-appearance="light"]`），不集中在 `base.css` ——
-  這樣主題檔仍然自給自足，自訂主題複製一份就能改
+- **新增顏色變數**：`base.css` 的 `:root` 與 `:root[data-appearance="light"]` 兩組都要給，
+  `print.css` 也要看要不要蓋（列印一律白底）。標記的 `--hl-*` 淺色那組要另外驗算
+  標記內粗體（`--hl-accent`）的對比
 - **淺色不是把深色反過來**。`#DD9853` 在暖白紙上對比只有 2.28:1，淺色要維持
   同色相往下壓到通過 WCAG AA。現行值見 `docs/SPEC.md` 4.4 節的對照表
 - **新增選單項目**：`MarkdownBrowserApp.swift` 的 `menus`，動作對象是
   `router.active`（Picker 用 `activeBinding(_:fallback:)`）；工具列在
   `ContentView.swift` 的 `toolbarItems`，直接用自己視窗的 `state`。
-  `⌘N`、`⌘O`、`⌘1`–`⌘4`、`⇧⌘H`、`⇧⌘B`、`⌃Tab` 已被佔用
+  `⌘N`、`⌘O`、`⌘3`／`⌘4`（字體）、`⇧⌘H`、`⇧⌘B`、`⌃Tab` 已被佔用；`⌘1`／`⌘2` 原本是主題，現在空著
 - **選單與按鍵作用在焦點欄**：搜尋、列印、標記走 `router.active?.focusedBridge`，
   不是 `bridge`（那只是心得那欄）
 
@@ -166,7 +164,7 @@ EPUB 的規格在 `docs/SPEC.md` 第 13 節。最容易被改壞的：
   反引號、`${` 與全形標點
 - 網頁資源走自訂的 `mbres://` scheme 而不是 `file://`：
   `loadFileURL(_:allowingReadAccessTo:)` 只能開放一個目錄樹，而我們要同時讀
-  `app`（bundle 網頁資源）、`doc`（文件所在資料夾）、`userfont` 三個位置
+  `app`（bundle 網頁資源）、`doc`（文件所在資料夾）、`book`（EPUB 裡面）三個位置
 - `Package.swift` 刻意停在 Swift 5 language mode，也刻意不用 SPM resources。
   全在主執行緒的 App，嚴格併發檢查只會製造 `@Sendable` 樣板
 - **`WindowGroup` 刻意不帶值。** 用 `WindowGroup(for:)` 把「視窗在讀哪個檔」

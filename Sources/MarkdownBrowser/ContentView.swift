@@ -2,11 +2,8 @@ import SwiftUI
 
 struct ContentView: View {
 
-    /// 這個視窗的狀態。主題、字體、字級都是視窗各自的。
+    /// 這個視窗的狀態。字體、字級、外觀都是視窗各自的。
     @ObservedObject var state: DocumentState
-
-    /// 只用來拿主題清單（自訂主題的檔案集合是全 App 共用的）。
-    @ObservedObject var settings: AppSettings
 
     var body: some View {
         HSplitView {
@@ -50,15 +47,6 @@ struct ContentView: View {
 
         ToolbarItemGroup(placement: .primaryAction) {
             Menu {
-                Picker("主題", selection: $state.theme) {
-                    ForEach(settings.themes) { theme in
-                        Text(theme.name).tag(theme.id)
-                    }
-                }
-                .pickerStyle(.inline)
-
-                Divider()
-
                 Picker("外觀", selection: $state.appearance) {
                     ForEach(AppSettings.appearanceChoices, id: \.id) { choice in
                         Text(choice.name).tag(choice.id)
@@ -66,9 +54,9 @@ struct ContentView: View {
                 }
                 .pickerStyle(.inline)
             } label: {
-                Label("主題與外觀", systemImage: "paintpalette")
+                Label("外觀", systemImage: "circle.lefthalf.filled")
             }
-            .help("切換主題與明暗　⌘1 ⌘2")
+            .help("淺色、深色或跟隨系統")
 
             Menu {
                 Picker("字體", selection: $state.fontFamily) {

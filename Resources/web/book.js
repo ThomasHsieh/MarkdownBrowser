@@ -3,10 +3,10 @@
  * 可重排的書：Swift 把每個 spine 檔的原文與所有 CSS 一次送來，這裡串成一條。
  * 樣式「先讀後丟」：在一個看不見的 iframe 裡套上書自己的 CSS，用 getComputedStyle
  * 讀出每個元素實際上是不是粗體、斜體、置中、縮排、小字，轉成我們的 mb-* class，
- * 再把書的 CSS 與 class 全部丟掉、套我們的主題。粗體因此也只換色、不加粗。
+ * 再把書的 CSS 與 class 全部丟掉、套我們的樣式。粗體因此也只換色、不加粗。
  *
  * 固定版面的書：每頁是一個 iframe（mbres://book/…），等比縮放、翻頁式顯示，
- * 不套主題、不能標記。
+ * 不套我們的樣式、不能標記。
  */
 
 'use strict';
@@ -232,7 +232,7 @@
       for (const attr of [...el.attributes]) {
         if (attr.name !== 'data-mb-ph') h.setAttribute(attr.name, attr.value);
       }
-      h.classList.remove('mb-b', 'mb-small');          // 標題用主題的標題色，不是粗體的橘
+      h.classList.remove('mb-b', 'mb-small');          // 標題走標題的字級與顏色，不吃粗體那條規則
       if (!h.getAttribute('class')) h.removeAttribute('class');
       while (el.firstChild) h.appendChild(el.firstChild);
       el.replaceWith(h);
@@ -1101,8 +1101,8 @@
     });
   };
 
-  /* 字級、字體、主題一變，分頁跟著重排：記住讀到哪裡，排完翻回那一頁 */
-  ['setFontSize', 'setFontFamily', 'setTheme', 'setUserTheme', 'setUserFonts'].forEach((name) => {
+  /* 字級、字體一變，分頁跟著重排：記住讀到哪裡，排完翻回那一頁 */
+  ['setFontSize', 'setFontFamily'].forEach((name) => {
     const original = MB[name];
     MB[name] = function (...args) {
       const anchor = BK.paged ? captureBookAnchor() : null;

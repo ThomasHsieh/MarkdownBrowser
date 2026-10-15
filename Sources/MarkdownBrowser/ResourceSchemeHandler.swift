@@ -5,12 +5,11 @@ import WebKit
 /// 自訂 URL scheme `mbres://`，取代 `file://`。
 ///
 /// 用 `loadFileURL(_:allowingReadAccessTo:)` 只能開放一個目錄樹，
-/// 但我們同時要讀三個不相干的地方：App 自己的網頁資源、目前文件所在資料夾
-/// （相對路徑圖片）、以及 `~/.config/markdownbrowser/fonts`。自己供應反而乾淨。
+/// 但我們同時要讀幾個不相干的地方：App 自己的網頁資源、目前文件所在資料夾
+/// （相對路徑圖片）、EPUB 裡面的檔案。自己供應反而乾淨。
 ///
 ///   mbres://app/…       → Contents/Resources/web/…
 ///   mbres://doc/…       → 目前文件所在資料夾
-///   mbres://userfont/…  → ~/.config/markdownbrowser/fonts
 ///   mbres://book/…      → 書那欄的 EPUB 裡面（直接從 ZIP 讀，不解壓）
 final class ResourceSchemeHandler: NSObject, WKURLSchemeHandler {
 
@@ -79,8 +78,6 @@ final class ResourceSchemeHandler: NSObject, WKURLSchemeHandler {
             return Bundle.main.resourceURL?.appendingPathComponent("web", isDirectory: true)
         case "doc":
             return documentDirectory
-        case "userfont":
-            return UserAssets.fontsDirectory
         default:
             return nil
         }

@@ -2,28 +2,20 @@ import AppKit
 import Combine
 import Foundation
 
-/// 跨視窗共用的東西：新視窗的起始設定、自訂主題目錄、最近開啟清單。
+/// 跨視窗共用的東西：新視窗的起始設定、最近開啟清單、書的配對與閱讀位置。
 ///
-/// 主題、字體、字級、外觀本身是「每個視窗各自的狀態」（見 `DocumentState`）——
-/// 這裡只留最後一次的選擇，當下一個新視窗的起始值。真正全 App 共用的只有
-/// 自訂主題與字型的檔案集合，以及最近開啟清單。
+/// 字體、字級、外觀本身是「每個視窗各自的狀態」（見 `DocumentState`）——
+/// 這裡只留最後一次的選擇，當下一個新視窗的起始值。
 @MainActor
 final class AppSettings: ObservableObject {
 
     static let shared = AppSettings()
-
-    /// 選單上的主題清單：內建兩套 ＋ `~/.config/markdownbrowser/themes/*.css`。
-    @Published private(set) var themes: [ThemeInfo] = UserAssets.builtInThemes
 
     @Published private(set) var recentDocuments: [URL] = []
 
     // MARK: - 新視窗的起始設定
     //
     // 任何視窗改了設定就更新這裡，所以「下一個視窗」永遠沿用最後一次的選擇。
-
-    var theme: String {
-        didSet { defaults.set(theme, forKey: Keys.theme) }
-    }
 
     var appearance: String {
         didSet { defaults.set(appearance, forKey: Keys.appearance) }
@@ -104,10 +96,8 @@ final class AppSettings: ObservableObject {
     // MARK: 內部
 
     private let defaults = UserDefaults.standard
-    private var configWatcher: FileWatcher?
 
     private enum Keys {
-        static let theme = "theme"
         static let fontSize = "fontSize"
         static let fontFamily = "fontFamily"
         static let appearance = "appearance"
@@ -124,7 +114,7 @@ final class AppSettings: ObservableObject {
     }
 
     private init() {
-        theme = defaults.string(forKey: Keys.theme) ?? "reading"
+        // 舊版存的主題（閱讀／終端機）已合併成唯一一套樣式，不再讀，也不必清
         appearance = defaults.string(forKey: Keys.appearance) ?? "auto"
         fontFamily = defaults.string(forKey: Keys.fontFamily) ?? "kai"
         fontSize = defaults.object(forKey: Keys.fontSize) as? Double ?? Self.defaultFontSize
@@ -141,14 +131,7 @@ final class AppSettings: ObservableObject {
             .map { URL(fileURLWithPath: $0) }
             .filter { FileManager.default.fileExists(atPath: $0.path) }
 
-        UserAssets.ensureDirectories()
-        refreshThemes()
         observeSystemAppearance()
-
-        // 改了自訂主題的 CSS 立刻生效。檔案集合是全 App 共用的，所以改動要推給每個視窗。
-        configWatcher = FileWatcher(url: UserAssets.themesDirectory, debounce: 0.2) { [weak self] in
-            Task { @MainActor in self?.refreshThemes(reinject: true) }
-        }
     }
 
     // MARK: - 最近開啟
@@ -196,31 +179,6 @@ final class AppSettings: ObservableObject {
     func lastNote(in folder: URL) -> URL? {
         guard let path = lastNoteByFolder[folder.path], FileManager.default.fileExists(atPath: path) else { return nil }
         return URL(fileURLWithPath: path)
-    }
-
-    // MARK: - 主題
-
-    func refreshThemes(reinject: Bool = false) {
-        themes = UserAssets.builtInThemes + UserAssets.userThemes()
-        guard reinject else { return }
-        let css = UserAssets.userThemeCSS()
-        let fonts = UserAssets.userFontCSS()
-        for document in WindowRouter.shared.documents {
-            document.bridge?.setUserTheme(css)
-            document.bridge?.setUserFonts(fonts)
-        }
-    }
-
-    func openConfigDirectory() {
-        UserAssets.ensureDirectories()
-        NSWorkspace.shared.open(UserAssets.configDirectory)
-    }
-
-    func exportBuiltInThemes() {
-        if let dir = try? UserAssets.exportBuiltInThemes() {
-            refreshThemes(reinject: true)
-            NSWorkspace.shared.open(dir)
-        }
     }
 
     // MARK: - 系統外觀

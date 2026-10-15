@@ -14,7 +14,7 @@ struct OutlineItem: Identifiable, Hashable {
 ///
 /// 對照模式下一個視窗有兩欄（左書右心得），兩欄都要標記、都要監聽檔案、都要在
 /// 關窗前把註記寫完 —— 所以這些從 `DocumentState` 抽出來，心得（`DocumentState`
-/// 本身）與書（`BookPane`）共用同一份。主題、字體這類「整個視窗」的設定
+/// 本身）與書（`BookPane`）共用同一份。字體、外觀這類「整個視窗」的設定
 /// 留在 `DocumentState`，這裡透過 `windowState` 去拿。
 @MainActor
 class PaneDocument: ObservableObject, Identifiable {
@@ -150,12 +150,9 @@ class PaneDocument: ObservableObject, Identifiable {
     /// 網頁端載入完成後補送一次這個視窗目前的狀態。
     func pushInitialState() {
         guard let bridge, let window = windowState else { return }
-        bridge.setTheme(window.theme)
         bridge.setAppearance(window.resolvedAppearance)
         bridge.setFontFamily(window.fontFamily)
         bridge.setFontSize(window.fontSize)
-        bridge.setUserTheme(UserAssets.userThemeCSS())
-        bridge.setUserFonts(UserAssets.userFontCSS())
         render(keepScroll: false)
         window.paneDidLoad(self)
     }

@@ -129,10 +129,6 @@ MB.render = function (markdown, opts) {
   toSwift({ type: 'outline', outline: outline });
 };
 
-MB.setTheme = function (name) {
-  document.documentElement.setAttribute('data-theme', name);
-};
-
 MB.setAppearance = function (mode) {
   document.documentElement.setAttribute('data-appearance', mode);
 };
@@ -148,14 +144,6 @@ MB.setFontFamily = function (name) {
 
 MB.setFontSize = function (px) {
   document.documentElement.style.setProperty('--font-size', px + 'px');
-};
-
-MB.setUserTheme = function (css) {
-  document.getElementById('user-theme').textContent = css || '';
-};
-
-MB.setUserFonts = function (css) {
-  document.getElementById('user-fonts').textContent = css || '';
 };
 
 /* 把元素帶進畫面。書的翻頁模式是「翻到它所在的那一頁」，不能用 scrollIntoView ——

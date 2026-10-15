@@ -9,7 +9,7 @@ import Foundation
 @MainActor
 final class BookPane: PaneDocument {
 
-    /// 宿主視窗。書那欄沒有自己的主題、字體，都跟著視窗走。
+    /// 宿主視窗。書那欄沒有自己的字體、外觀，都跟著視窗走。
     weak var host: DocumentState?
 
     @Published private(set) var epub: EpubBook?

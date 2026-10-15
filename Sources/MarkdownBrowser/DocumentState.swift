@@ -24,12 +24,12 @@ enum BookLayout: String, CaseIterable {
     }
 }
 
-/// 一個視窗的全部狀態：讀哪份心得、側欄內容、這個視窗的主題與字體，
+/// 一個視窗的全部狀態：讀哪份心得、側欄內容、這個視窗的字體與外觀，
 /// 以及對照模式下左邊那本書（`book`）。
 ///
 /// 原本是 `AppState.shared` 單例，多視窗之後改成一個視窗一份 —— 單例的版本
 /// 只要 Finder 再開一個檔就會蓋掉正在讀的那一份。跨視窗共用的東西
-/// （自訂主題目錄、最近開啟、新視窗的起始設定）在 `AppSettings`。
+/// （最近開啟、新視窗的起始設定）在 `AppSettings`。
 ///
 /// 心得本身的文件、標記、sidecar 邏輯在父類別 `PaneDocument`，書那欄（`BookPane`）
 /// 用的是同一份。
@@ -45,15 +45,8 @@ final class DocumentState: PaneDocument {
     // 每個視窗各自一份，起始值取自 AppSettings，改動時也寫回去當下一個視窗的起始值。
     // 兩欄共用：書那欄跟著視窗走（docs/SPEC.md 13.3）。
 
-    @Published var theme: String {
-        didSet {
-            settings.theme = theme
-            panes.forEach { $0.bridge?.setTheme(theme) }
-        }
-    }
-
     /// 外觀：`auto` 跟隨系統，或強制 `light` / `dark`。
-    /// 與主題、字體同樣正交 —— 主題決定版面，外觀只決定明暗那一組顏色。
+    /// 與字體正交 —— 外觀只決定明暗那一組顏色。
     @Published var appearance: String {
         didSet {
             settings.appearance = appearance
@@ -62,7 +55,7 @@ final class DocumentState: PaneDocument {
     }
 
     /// 中文字體：`kai`（霞鶩文楷）或 `gothic`（更紗黑體）。
-    /// 與主題正交 —— 主題管顏色與版面，這個只管用哪套字。
+    /// 與外觀正交 —— 這個只管用哪套字。
     @Published var fontFamily: String {
         didSet {
             settings.fontFamily = fontFamily
@@ -157,7 +150,6 @@ final class DocumentState: PaneDocument {
 
     override init() {
         let settings = AppSettings.shared
-        theme = settings.theme
         appearance = settings.appearance
         fontFamily = settings.fontFamily
         fontSize = settings.fontSize
@@ -664,12 +656,9 @@ final class DocumentState: PaneDocument {
 protocol WebBridge: AnyObject {
     var isReady: Bool { get }
 
-    func setTheme(_ name: String)
     func setAppearance(_ mode: String)
     func setFontFamily(_ name: String)
     func setFontSize(_ px: Double)
-    func setUserTheme(_ css: String)
-    func setUserFonts(_ css: String)
     func setDocumentDirectory(_ url: URL)
     func scrollToHeading(_ id: String)
     func openFind()
