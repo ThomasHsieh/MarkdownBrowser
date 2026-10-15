@@ -116,6 +116,24 @@
 				<string>mdwn</string>
 			</array>
 		</dict>
+		<!-- EPUB 只宣告「能開」，不搶預設程式：Alternate 只出現在「打開方式」裡，
+		     make set-default 也不碰它（docs/SPEC.md 第 8、13 節）。 -->
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>EPUB 電子書</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>org.idpf.epub-container</string>
+			</array>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>epub</string>
+			</array>
+		</dict>
 		<dict>
 			<key>CFBundleTypeName</key>
 			<string>純文字</string>

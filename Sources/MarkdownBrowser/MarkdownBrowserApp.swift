@@ -47,26 +47,34 @@ struct MarkdownBrowserApp: App {
             Divider()
             Button("用 MarkEdit 開啟") { router.active?.openInMarkEdit() }
                 .keyboardShortcut("e")
-                .disabled(!hasDocument)
-            Button("在 Finder 中顯示標記檔") { router.active?.revealSidecarInFinder() }
-                .disabled(!(router.active?.sidecarExists ?? false))
-            Button("重新載入") { router.active?.render(keepScroll: true) }
+                .disabled(router.active?.documentURL == nil || router.active?.focusedDocument !== router.active)
+            Button("在 Finder 中顯示標記檔") { router.active?.focusedDocument.revealSidecarInFinder() }
+                .disabled(!(router.active?.focusedDocument.sidecarExists ?? false))
+            Button("重新載入") { router.active?.reloadAll() }
                 .keyboardShortcut("r")
                 .disabled(!hasDocument)
+
+            Divider()
+
+            // 書名比對不到或配錯（例如想對照英文原版）時手動指定（docs/SPEC.md 13.2）
+            Button("指定對應書籍…") { router.active?.chooseBookManually() }
+                .disabled(router.active?.documentURL == nil)
+            Button("清除指定") { router.active?.clearManualPair() }
+                .disabled(!(router.active?.hasManualPair ?? false))
         }
 
         CommandGroup(replacing: .printItem) {
-            Button("列印…") { router.active?.bridge?.printDocument() }
+            Button("列印…") { router.active?.focusedBridge?.printDocument() }
                 .keyboardShortcut("p")
                 .disabled(!hasDocument)
         }
 
         CommandGroup(after: .textEditing) {
-            Button("搜尋…") { router.active?.bridge?.openFind() }
+            Button("搜尋…") { router.active?.focusedBridge?.openFind() }
                 .keyboardShortcut("f")
-            Button("下一筆") { router.active?.bridge?.findNext() }
+            Button("下一筆") { router.active?.focusedBridge?.findNext() }
                 .keyboardShortcut("g")
-            Button("上一筆") { router.active?.bridge?.findPrev() }
+            Button("上一筆") { router.active?.focusedBridge?.findPrev() }
                 .keyboardShortcut("g", modifiers: [.command, .shift])
 
             Divider()
@@ -126,12 +134,18 @@ struct MarkdownBrowserApp: App {
 
             Divider()
 
+            Button(router.active?.isComparing == true ? "關閉對照書籍" : "對照書籍") { router.active?.toggleCompare() }
+                .keyboardShortcut("b", modifiers: [.command, .shift])
+                .disabled(!((router.active?.canCompare ?? false) || (router.active?.isComparing ?? false)))
+
+            Divider()
+
             Button("開啟設定資料夾") { settings.openConfigDirectory() }
             Button("複製內建主題以供修改") { settings.exportBuiltInThemes() }
         }
     }
 
-    private var hasDocument: Bool { router.active?.documentURL != nil }
+    private var hasDocument: Bool { !(router.active?.isEmpty ?? true) }
 
     /// 選單的 Picker 要綁在前景視窗的狀態上。沒有前景視窗時退回
     /// AppSettings 記著的那一份（也就是下一個新視窗會用的值）。
@@ -170,7 +184,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `Cmd Q` 不一定會讓視窗收到 willClose，所以不能只靠關窗那條路。
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         MainActor.assumeIsolated {
-            let documents = WindowRouter.shared.documents.filter { $0.documentURL != nil }
+            // 心得與書兩欄都要寫完
+            let documents = WindowRouter.shared.documents.flatMap(\.panes).filter { $0.documentURL != nil }
             guard !documents.isEmpty else { return .terminateNow }
             var remaining = documents.count
             var replied = false
@@ -194,7 +209,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @MainActor
     static func highlightSelection() {
-        WindowRouter.shared.active?.bridge?.highlightSelection { ok in
+        WindowRouter.shared.active?.focusedBridge?.highlightSelection { ok in
             if !ok { NSSound.beep() }
         }
     }
@@ -227,11 +242,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func installKeyMonitor() {
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+
+            // ⌃Tab：窄視窗 tab 模式下切換書與心得（keyCode 48 = Tab）
+            if flags.contains(.control), !flags.contains(.command), event.keyCode == 48 {
+                return MainActor.assumeIsolated { () -> NSEvent? in
+                    guard let active = WindowRouter.shared.active, active.isComparing, active.isTabbed else { return event }
+                    active.selectedTab = active.selectedTab == .book ? .note : .book
+                    return nil
+                }
+            }
+
             guard flags.contains(.command), !flags.contains(.control) else { return event }
 
             return MainActor.assumeIsolated { () -> NSEvent? in
-                // 多視窗：送給前景視窗的 bridge，而不是某個共用的單例。
-                guard let bridge = WindowRouter.shared.active?.bridge else { return event }
+                // 多視窗：送給前景視窗的 bridge，而不是某個共用的單例；對照模式下是焦點欄的。
+                guard let bridge = WindowRouter.shared.active?.focusedBridge else { return event }
                 switch event.keyCode {
                 case 3:                                   // F
                     bridge.openFind()

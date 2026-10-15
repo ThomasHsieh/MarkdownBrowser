@@ -1,38 +1,39 @@
 import AppKit
 import Combine
 import Foundation
+import UniformTypeIdentifiers
 
-struct OutlineItem: Identifiable, Hashable {
-    let id: String
-    let level: Int
-    let text: String
+/// 對照模式下的兩欄。
+enum PaneSide: String {
+    case book
+    case note
 }
 
-/// 一個視窗的全部狀態：讀哪個檔、側欄內容、以及這個視窗的主題與字體。
+/// 一個視窗的全部狀態：讀哪份心得、側欄內容、這個視窗的主題與字體，
+/// 以及對照模式下左邊那本書（`book`）。
 ///
 /// 原本是 `AppState.shared` 單例，多視窗之後改成一個視窗一份 —— 單例的版本
 /// 只要 Finder 再開一個檔就會蓋掉正在讀的那一份。跨視窗共用的東西
 /// （自訂主題目錄、最近開啟、新視窗的起始設定）在 `AppSettings`。
+///
+/// 心得本身的文件、標記、sidecar 邏輯在父類別 `PaneDocument`，書那欄（`BookPane`）
+/// 用的是同一份。
 @MainActor
-final class DocumentState: ObservableObject, Identifiable {
-
-    let id = UUID()
+final class DocumentState: PaneDocument {
 
     // MARK: 文件
 
-    @Published private(set) var documentURL: URL?
     @Published private(set) var siblings: [URL] = []
-    @Published private(set) var outline: [OutlineItem] = []
-    @Published var activeHeadingID: String?
 
     // MARK: 外觀
     //
     // 每個視窗各自一份，起始值取自 AppSettings，改動時也寫回去當下一個視窗的起始值。
+    // 兩欄共用：書那欄跟著視窗走（docs/SPEC.md 13.3）。
 
     @Published var theme: String {
         didSet {
             settings.theme = theme
-            bridge?.setTheme(theme)
+            panes.forEach { $0.bridge?.setTheme(theme) }
         }
     }
 
@@ -50,14 +51,15 @@ final class DocumentState: ObservableObject, Identifiable {
     @Published var fontFamily: String {
         didSet {
             settings.fontFamily = fontFamily
-            bridge?.setFontFamily(fontFamily)
+            panes.forEach { $0.bridge?.setFontFamily(fontFamily) }
         }
     }
 
+    /// 兩欄共用同一個字級，兩邊的字看起來才一樣大。
     @Published var fontSize: Double {
         didSet {
             settings.fontSize = fontSize
-            bridge?.setFontSize(fontSize)
+            panes.forEach { $0.bridge?.setFontSize(fontSize) }
         }
     }
 
@@ -69,40 +71,68 @@ final class DocumentState: ObservableObject, Identifiable {
         didSet { settings.sidebarMode = sidebarMode }
     }
 
-    // MARK: 標記
-    //
-    // 網頁端是標記資料的唯一真相，這裡只有側欄要的鏡像與 sidecar 檔的讀寫。
+    // MARK: 對照（docs/SPEC.md 第 13 節）
 
-    @Published private(set) var highlights: [HighlightItem] = []
-    @Published private(set) var sidecarExists = false
+    /// 左邊那本書。永遠有這個物件，沒開書時它的 `documentURL` 是 nil。
+    let book: BookPane
 
-    /// 唯讀的原因；`nil` 代表可以寫。資料夾不能寫、sidecar 讀不出來都會設。
-    @Published private(set) var highlightsReadOnly: String?
+    /// 對照開關。開著時心得配對到書就自動切成雙欄；新視窗沿用最後一次的值。
+    @Published var compareEnabled: Bool {
+        didSet { settings.compareEnabled = compareEnabled }
+    }
 
-    /// 最後一次讀到或寫入的 sidecar 內容。自己寫檔也會觸發資料夾的監聽，
-    /// 內容一樣就是自己的回音，不重新載入。
-    private var lastSidecarText: String?
+    /// 書那欄佔內容區的比例。
+    @Published var splitRatio: Double {
+        didSet { settings.splitRatio = splitRatio }
+    }
 
-    /// 寫入失敗、還留在記憶體裡的內容。外層 Optional 是「有沒有待寫」，
-    /// 內層 `nil` 是「要刪檔」。
-    private var pendingSave: String??
+    /// 最後點過的那一欄。`⌘F`、`⌘P`、標記都作用在這一欄。
+    @Published var focusedPane: PaneSide = .note
 
-    /// 這個檔已經問過要不要認領孤兒 sidecar 了，同一次開啟不再問。
-    private var offeredOrphansFor: String?
+    /// 窄視窗改成 tab 時顯示哪一欄。
+    @Published var selectedTab: PaneSide = .note {
+        didSet {
+            guard selectedTab != oldValue else { return }
+            focusedPane = selectedTab
+            // 背景捲好的那一欄，切過去時才閃目標標題（13.6 節）
+            pane(selectedTab).bridge?.revealPendingSync()
+        }
+    }
+
+    /// 由版面回報：現在是不是窄到改成 tab。同步時要知道另一欄看不看得到。
+    var isTabbed = false
+
+    /// 使用者主動打開的是哪一邊。關掉對照時留下這一邊。
+    private(set) var primarySide: PaneSide = .note
+
+    /// 心得配對到的書（不論對照開關），工具列按鈕要知道能不能按。
+    @Published private(set) var pairedBookURL: URL?
+
+    /// 書配對到的心得資料夾（單獨開書時），同上。
+    @Published private(set) var pairedNoteLocation: (folder: URL, single: URL?)?
+
+    /// 書的章 ↔ 心得檔
+    @Published private(set) var chapterMap = ChapterMap.empty
+
+    static let splitThreshold: CGFloat = 1040
 
     // MARK: 內部
-
-    weak var bridge: WebBridge?
 
     /// 由 `WindowRouter` 在視窗出現時掛上。用來把視窗帶到前景，
     /// 以及把強制的淺色／深色設到視窗上。
     private(set) weak var window: NSWindow?
 
     private let settings = AppSettings.shared
-    private var documentWatcher: FileWatcher?
-    private var folderWatcher: FileWatcher?
+    private var bookObserver: AnyCancellable?
 
-    init() {
+    override var windowState: DocumentState? { self }
+    override var paneWindow: NSWindow? { window }
+
+    var panes: [PaneDocument] { [self, book] }
+
+    func pane(_ side: PaneSide) -> PaneDocument { side == .book ? book : self }
+
+    override init() {
         let settings = AppSettings.shared
         theme = settings.theme
         appearance = settings.appearance
@@ -110,6 +140,15 @@ final class DocumentState: ObservableObject, Identifiable {
         fontSize = settings.fontSize
         sidebarVisible = settings.sidebarVisible
         sidebarMode = settings.sidebarMode
+        compareEnabled = settings.compareEnabled
+        splitRatio = settings.splitRatio
+        book = BookPane()
+        super.init()
+        book.host = self
+        // 書那欄的變化也要讓這個視窗的畫面（工具列、版面、側欄）重算
+        bookObserver = book.objectWillChange.sink { [weak self] _ in
+            MainActor.assumeIsolated { self?.objectWillChange.send() }
+        }
     }
 
     // MARK: - 視窗
@@ -127,303 +166,377 @@ final class DocumentState: ObservableObject, Identifiable {
         NSApp?.activate()
     }
 
+    /// 兩欄都沒有東西。
+    var isEmpty: Bool { documentURL == nil && book.documentURL == nil }
+
+    func isShowing(_ path: String) -> Bool {
+        documentURL?.path == path || book.documentURL?.path == path
+    }
+
+    /// 焦點欄的 bridge。焦點欄沒開東西就退回有開的那一欄。
+    var focusedBridge: WebBridge? {
+        if focusedPane == .book, book.documentURL != nil, let b = book.bridge { return b }
+        if documentURL != nil, let b = bridge { return b }
+        return book.bridge ?? bridge
+    }
+
+    var focusedDocument: PaneDocument {
+        focusedPane == .book && book.documentURL != nil ? book : self
+    }
+
     // MARK: - 開檔
 
     /// 一律經過 `WindowRouter.open(_:in:)` 進來，那裡保證一檔一窗。
+    /// 這是使用者指定的開檔（選單、Finder、側欄），開的那一邊成為主角。
     func open(_ url: URL) {
         let resolved = url.resolvingSymlinksInPath()
-        // 換檔前先把打到一半的註記寫進舊檔的 sidecar，寫完（或寫不進去、問過了）才換。
-        // 不能只發出 commitNote 就往下走：寫入結果晚一步才回來，那時 documentURL
-        // 已經換掉，失敗就沒有地方可以出警示。離開一份文件等同關掉它。
-        guard documentURL != nil else { performOpen(resolved); return }
-        prepareToCloseAsync { [self] in
-            resolvePendingSave()
-            performOpen(resolved)
+        if BookPairing.isEpub(resolved) { openBookAsPrimary(resolved) } else { openNote(resolved, primary: true) }
+    }
+
+    func openNote(_ url: URL, primary: Bool, then done: (() -> Void)? = nil) {
+        if primary { primarySide = .note }
+        loadDocument(url) { [self] in
+            refreshPairing()
+            done?()
         }
     }
 
-    private func performOpen(_ resolved: URL) {
-        documentURL = resolved
-        settings.noteOpened(resolved)
-        highlights = []
-        offeredOrphansFor = nil
-
-        bridge?.setDocumentDirectory(resolved.deletingLastPathComponent())
+    override func didOpen(_ url: URL) {
+        settings.noteOpened(url, primary: true)
+        bridge?.setDocumentDirectory(url.deletingLastPathComponent())
         refreshSiblings()
-        render(keepScroll: false)
+    }
 
-        documentWatcher = FileWatcher(url: resolved, onRename: { [weak self] newURL in
-            self?.followRename(to: newURL)
-        }) { [weak self] in
-            self?.render(keepScroll: true)
-        }
-        // 資料夾的監聽同時負責 sidecar：git pull、checkout 都是換檔，會反映在資料夾上
-        folderWatcher = FileWatcher(url: resolved.deletingLastPathComponent(), debounce: 0.3) { [weak self] in
-            self?.refreshSiblings()
-            self?.reloadSidecarIfChanged()
-        }
+    override func folderDidChange() {
+        refreshSiblings()
+        rebuildChapterMap()
+    }
+
+    override func didUnload() {
+        siblings = []
+        pairedBookURL = nil
+    }
+
+    override func renderContent(_ url: URL, keepScroll: Bool, highlights: [String: Any]?) -> Bool {
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return false }
+        bridge?.render(markdown: text, keepScroll: keepScroll, highlights: highlights)
+        return true
+    }
+
+    override func pushInitialState() {
+        if let url = documentURL { bridge?.setDocumentDirectory(url.deletingLastPathComponent()) }
+        super.pushInitialState()
+    }
+
+    override func followRenamedDocument(to newURL: URL) {
+        // 一檔一窗：新檔名若已經開在別的視窗，就交給那個視窗，這裡不重複開。
+        // 不帶到前景 —— 改名多半是 AI 在背景做的，不該搶走焦點
+        guard WindowRouter.shared.window(reading: newURL) == nil else { return }
+        openNote(newURL, primary: false)
     }
 
     func openPanel() {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.plainText]
+        panel.allowedContentTypes = [.plainText, .epub]
         panel.allowsOtherFileTypes = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
-        panel.directoryURL = documentURL?.deletingLastPathComponent()
+        panel.directoryURL = (documentURL ?? book.documentURL)?.deletingLastPathComponent()
         if panel.runModal() == .OK, let url = panel.url { WindowRouter.shared.open(url, in: self) }
     }
 
-    /// `keepScroll` 為真是重載同一份文件：標記沿用網頁端記憶體裡的（那才是唯一的真相），
-    /// 只重新比對錨點。為假是換了檔，才從 sidecar 讀進來。
-    func render(keepScroll: Bool) {
-        guard let url = documentURL else { return }
-        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return }
-        bridge?.render(markdown: text, keepScroll: keepScroll,
-                       highlights: keepScroll ? nil : loadSidecar(for: url))
-        if !keepScroll { offerOrphanSidecars(for: url) }
-    }
-
-    /// 網頁端載入完成後補送一次這個視窗目前的狀態。
-    func pushInitialState() {
-        guard let bridge else { return }
-        bridge.setTheme(theme)
-        bridge.setAppearance(resolvedAppearance)
-        bridge.setFontFamily(fontFamily)
-        bridge.setFontSize(fontSize)
-        bridge.setUserTheme(UserAssets.userThemeCSS())
-        bridge.setUserFonts(UserAssets.userFontCSS())
-        if let url = documentURL {
-            bridge.setDocumentDirectory(url.deletingLastPathComponent())
-        }
-        render(keepScroll: false)
+    /// 重新載入：兩欄都重讀。
+    func reloadAll() {
+        render(keepScroll: true)
+        book.render(keepScroll: true)
     }
 
     // MARK: - 側欄
 
     private func refreshSiblings() {
         guard let url = documentURL else { siblings = []; return }
-        let dir = url.deletingLastPathComponent()
-        let files = (try? FileManager.default.contentsOfDirectory(
-            at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
-        let markdown = files.filter { ["md", "markdown", "mdown", "mkd", "mdwn"].contains($0.pathExtension.lowercased()) }
-        siblings = ChapterSort.sorted(markdown)
+        siblings = BookPairing.markdownFiles(in: url.deletingLastPathComponent())
     }
 
-    func setOutline(_ items: [OutlineItem]) { outline = items }
+    // MARK: - 配對與對照開關
 
-    // MARK: - 標記：sidecar 讀寫
+    /// 能不能按「對照書籍」：心得配對到書，或書配對到心得。
+    var canCompare: Bool {
+        if documentURL != nil { return pairedBookURL != nil }
+        if book.documentURL != nil { return pairedNoteLocation != nil }
+        return false
+    }
 
-    /// 讀 sidecar，順便決定唯讀狀態與警示列。回傳要送給網頁端的內容。
-    private func loadSidecar(for url: URL) -> [String: Any] {
-        var json: String?
-        var banner: (String, [(String, String)])?
-        switch SidecarFile.read(for: url) {
-        case .none:
-            lastSidecarText = nil
-            highlightsReadOnly = SidecarFile.isWritable(for: url) ? nil : "此資料夾無法寫入，不能標記"
-        case .ok(let text):
-            lastSidecarText = text
-            json = text
-            highlightsReadOnly = SidecarFile.isWritable(for: url) ? nil : "此資料夾無法寫入，不能標記"
-        case .invalid(let reason):
-            // 記下壞檔的原文：同一份壞檔不會反覆觸發重新載入，修好之後內容一變就會
-            lastSidecarText = try? String(contentsOf: SidecarFile.url(for: url), encoding: .utf8)
-            highlightsReadOnly = reason
-            banner = (reason, [("reveal", "在 Finder 中顯示")])
+    /// 兩欄都在顯示。
+    var isComparing: Bool { documentURL != nil && book.documentURL != nil }
+
+    /// 心得換了之後重新決定左邊那本書。開關關著時不自動開，但仍算出配對結果給按鈕用。
+    private func refreshPairing() {
+        guard let note = documentURL else { return }
+        pairedBookURL = BookPairing.book(forNote: note)
+        if compareEnabled, let paired = pairedBookURL {
+            let opening = book.documentURL?.path != paired.path
+            let saved = AppSettings.shared.bookPosition(for: paired)?["chapter"] as? Int
+            showBook(paired) { [self] in
+                // 書剛打開：上次讀到的地方就在這一章就回到那裡，否則（包括第一次打開）
+                // 翻到心得這一章 —— 你打開第 5 章的心得，要看的是書的第 5 章
+                guard opening else { return }
+                rebuildChapterMap()
+                let savedFile = saved.flatMap(mappedChapter).flatMap { chapterMap.targets[$0]?.file }
+                if savedFile != note { syncBookToCurrentNote() }
+            }
+        } else if book.documentURL != nil, primarySide == .note {
+            // 換到另一本書的心得（或沒有書的心得）：舊書收起來
+            if book.documentURL != pairedBookURL || !compareEnabled { closeBook() }
         }
-        sidecarExists = FileManager.default.fileExists(atPath: SidecarFile.url(for: url).path)
-        pendingSave = nil
-        if let banner { bridge?.setHighlightBanner(banner.0, actions: banner.1) }
-        else { bridge?.setHighlightBanner(nil, actions: []) }
-        return ["doc": url.path, "json": json ?? NSNull(),
-                "writable": highlightsReadOnly == nil, "reason": highlightsReadOnly ?? ""]
+        rebuildChapterMap()
     }
 
-    /// 網頁端送來的存檔請求。`doc` 是它當時在讀的檔 —— 換檔前最後一筆註記會晚一步才到，
-    /// 那時 `documentURL` 已經換了，要寫回它自己的 sidecar，不能寫到新檔去。
-    func saveHighlights(doc: String, json: String?) {
-        guard let url = documentURL, url.path == doc else {
-            // 舊檔已經不在（被改名、刪掉）就不寫，免得在原地生出孤兒；
-            // 舊的 sidecar 讀不出來（合併衝突）也不寫，絕不覆蓋
-            let old = URL(fileURLWithPath: doc)
-            guard FileManager.default.fileExists(atPath: old.path) else { return }
-            if case .invalid = SidecarFile.read(for: old) { return }
-            try? SidecarFile.write(json, for: old)
+    /// 把書放進左欄。書已經開在別的視窗就搬過來（docs/SPEC.md 13.7）。
+    func showBook(_ url: URL, then done: (() -> Void)? = nil) {
+        let resolved = url.resolvingSymlinksInPath()
+        if book.documentURL?.path == resolved.path { done?(); return }
+        WindowRouter.shared.takeBook(resolved, into: self) { [self] in
+            book.loadDocument(resolved) {
+                done?()
+            }
+        }
+    }
+
+    func closeBook() {
+        guard book.documentURL != nil else { return }
+        book.release { [self] in
+            focusedPane = .note
+            selectedTab = .note
+            if documentURL == nil { pairedNoteLocation = nil }
+        }
+    }
+
+    /// 書打開了（`BookPane` 通知）：算章節對應、單獨開書時找心得。
+    func bookDidOpen() {
+        guard let bookURL = book.documentURL else { return }
+        if documentURL == nil {
+            pairedNoteLocation = BookPairing.noteLocation(forBook: bookURL, title: book.epub?.title ?? "")
+        }
+        rebuildChapterMap()
+    }
+
+    func bookDidUnload() {
+        chapterMap = .empty
+        pairedNoteLocation = nil
+    }
+
+    /// 選單、Finder 打開的是 EPUB：書是主角。
+    private func openBookAsPrimary(_ url: URL) {
+        primarySide = .book
+        // 打開的就是目前心得配對的那本書：心得留著
+        if documentURL != nil, pairedBookURL?.path == url.path {
+            showBook(url)
             return
         }
-        guard highlightsReadOnly == nil else { return }
-        do {
-            try SidecarFile.write(json, for: url)
-            lastSidecarText = json
-            sidecarExists = json != nil
-            if pendingSave != nil {
-                pendingSave = nil
-                bridge?.setHighlightBanner(nil, actions: [])
-            }
-        } catch {
-            // 不跳對話框：註記每 500 ms 寫一次，失敗時會連續轟炸。標記還在網頁端的記憶體裡，
-            // 下次有異動就會再送一次；關視窗時還沒寫進去才問（resolvePendingSave）。
-            pendingSave = .some(json)
-            bridge?.setHighlightBanner("標記無法儲存：\(error.localizedDescription)",
-                                       actions: [("retry", "重試")])
-        }
-    }
-
-    func setHighlights(doc: String, items: [HighlightItem]) {
-        guard documentURL?.path == doc else { return }
-        highlights = items
-    }
-
-    func handleBannerAction(_ id: String) {
-        switch id {
-        case "retry":
-            if let pending = pendingSave, let url = documentURL { saveHighlights(doc: url.path, json: pending) }
-        case "reveal":
-            revealSidecarInFinder()
-        default:
-            break
-        }
-    }
-
-    /// sidecar 被外部改動（git pull、checkout、手動修好合併衝突）就重新載入。
-    /// 跟自己最後寫的一樣就是回音，不理。
-    private func reloadSidecarIfChanged() {
-        guard let url = documentURL else { return }
-        let file = SidecarFile.url(for: url)
-        sidecarExists = FileManager.default.fileExists(atPath: file.path)
-        let current = try? String(contentsOf: file, encoding: .utf8)
-        guard current != lastSidecarText else { return }
-        bridge?.setHighlights(loadSidecar(for: url))
-    }
-
-    /// 關視窗、換檔、結束 App 時還有沒寫進去的標記：這是唯一會打斷你的時候，
-    /// 再不處理資料就真的沒了。
-    func resolvePendingSave() {
-        guard let pending = pendingSave, let url = documentURL else { return }
-        while true {
-            let alert = NSAlert()
-            alert.messageText = "有標記尚未儲存"
-            alert.informativeText = "「\(url.lastPathComponent)」的標記寫不進標記檔。"
-            alert.addButton(withTitle: "再試一次")
-            alert.addButton(withTitle: "拷貝為 JSON")
-            alert.addButton(withTitle: "放棄")
-            switch alert.runModal() {
-            case .alertFirstButtonReturn:
-                do {
-                    try SidecarFile.write(pending, for: url)
-                    pendingSave = nil
-                    return
-                } catch { continue }
-            case .alertSecondButtonReturn:
-                copyToPasteboard(pending ?? "")
-                pendingSave = nil
-                return
-            default:
-                pendingSave = nil
-                return
+        let proceed = { [self] in
+            showBook(url) { [self] in
+                settings.noteOpened(url, primary: true)
+                if compareEnabled { openPairedNote() }
             }
         }
+        if documentURL != nil { releaseNote(then: proceed) } else { proceed() }
     }
 
-    /// 視窗要關了：打到一半的註記用回傳值自己寫（網頁端的訊息可能來不及送到），
-    /// 還有沒寫進去的標記就問。
-    func prepareToClose() {
-        // 要等 commitNote 的回呼：最後一筆註記是在回呼裡才寫的，寫入失敗也是那時才知道。
-        // 閉包強持有 self，視窗關了這份狀態也還活著；網頁端沒回應就 1.5 秒後照常處理。
-        var resolved = false
-        let finish = { [self] in
-            guard !resolved else { return }
-            resolved = true
-            resolvePendingSave()
+    /// 從書找心得：開上次在那個資料夾讀的檔；沒有紀錄就開書目前所在章對應的那份；
+    /// 再沒有就開第一份（docs/SPEC.md 13.2）。
+    private func openPairedNote() {
+        guard documentURL == nil, let location = pairedNoteLocation else { return }
+        let target: URL?
+        if let single = location.single {
+            target = single
+        } else if let last = settings.lastNote(in: location.folder) {
+            target = last
+        } else if let chapter = book.currentChapter.flatMap(mappedChapter),
+                  let mapped = chapterMap.targets[chapter]?.file {
+            target = mapped
+        } else {
+            target = BookPairing.markdownFiles(in: location.folder).first
         }
-        prepareToCloseAsync(finish)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { MainActor.assumeIsolated { finish() } }
+        guard let target else { return }
+        claimNote(target) { _ in }
     }
 
-    func prepareToCloseAsync(_ done: @escaping () -> Void) {
-        guard let url = documentURL, highlightsReadOnly == nil, let bridge else { done(); return }
-        bridge.commitNote { [self] json in
-            if let json {
-                do { try SidecarFile.write(json, for: url); lastSidecarText = json }
-                catch { pendingSave = .some(json) }
-            }
+    /// 心得換成 `url`。開在別的視窗就搬過來、空掉的視窗關掉（docs/SPEC.md 13.7）。
+    /// 回呼的參數是有沒有換成功。
+    private func claimNote(_ url: URL, then done: @escaping (Bool) -> Void) {
+        if documentURL?.path == url.path { done(true); return }
+        WindowRouter.shared.takeNote(url, into: self) { [self] ok in
+            guard ok else { done(false); return }
+            openNote(url, primary: false) { done(true) }
+        }
+    }
+
+    /// 心得交出去（被別的視窗接走、或打開別本書）。
+    func releaseNote(then done: @escaping () -> Void) {
+        guard documentURL != nil else { done(); return }
+        release { [self] in
+            focusedPane = .book
+            selectedTab = .book
             done()
         }
     }
 
-    func revealSidecarInFinder() {
-        guard let url = documentURL else { return }
-        let file = SidecarFile.url(for: url)
-        guard FileManager.default.fileExists(atPath: file.path) else { return }
-        NSWorkspace.shared.activateFileViewerSelecting([file])
-    }
-
-    func copyToPasteboard(_ text: String) {
-        let board = NSPasteboard.general
-        board.clearContents()
-        board.setString(text, forType: .string)
-    }
-
-    // MARK: - 標記：改名
-
-    /// App 開著時檔案被改名（多半是 AI 用 `git mv` 改了章名）：視窗跟到新檔，
-    /// sidecar 一起改名。這是「只有使用者動作才寫檔」唯一的例外 —— 它在跟上一個
-    /// 已經發生的改名，比留下孤兒乾淨。
-    private func followRename(to newURL: URL) {
-        guard let old = documentURL else { return }
-        let finish: (String?) -> Void = { [weak self] json in
-            guard let self else { return }
-            // 打到一半的註記先寫進舊的 sidecar，再整個搬過去
-            if let json, self.highlightsReadOnly == nil { try? SidecarFile.write(json, for: old) }
-            let from = SidecarFile.url(for: old), to = SidecarFile.url(for: newURL)
-            let fm = FileManager.default
-            if fm.fileExists(atPath: from.path), !fm.fileExists(atPath: to.path) {
-                try? fm.moveItem(at: from, to: to)
-            }
-            // 一檔一窗：新檔名若已經開在別的視窗，就交給那個視窗，這裡不重複開。
-            // 不帶到前景 —— 改名多半是 AI 在背景做的，不該搶走焦點
-            WindowRouter.shared.open(newURL, in: self, activate: false)
+    func toggleCompare() {
+        guard canCompare || isComparing else { return }
+        compareEnabled.toggle()
+        if compareEnabled {
+            if documentURL != nil, let paired = pairedBookURL { showBook(paired) }
+            else if book.documentURL != nil { openPairedNote() }
+        } else if isComparing {
+            if primarySide == .book { releaseNote {} } else { closeBook() }
         }
-        if let bridge { bridge.commitNote(completion: finish) } else { finish(nil) }
     }
 
-    /// 打開一個沒有 sidecar 的檔：同資料夾裡有「對應的檔已經不存在」的 sidecar，
-    /// 就拿它試比對目前的內容，過半數對得上才問要不要接上。
-    private func offerOrphanSidecars(for url: URL) {
-        guard offeredOrphansFor != url.path, let bridge else { return }
-        guard case .none = SidecarFile.read(for: url), highlightsReadOnly == nil else { return }
-        let candidates = SidecarFile.orphans(near: url)
-        guard !candidates.isEmpty else { return }
-        let byName = Dictionary(uniqueKeysWithValues: candidates.map { ($0.url.lastPathComponent, $0) })
-        bridge.probeHighlights(candidates.map { ["name": $0.url.lastPathComponent, "json": $0.json] }) { [weak self] results in
-            guard let self, self.documentURL == url else { return }
-            self.offeredOrphansFor = url.path
-            let best = results
-                .filter { $0.total > 0 && $0.matched * 2 > $0.total }
-                .max { Double($0.matched) / Double($0.total) < Double($1.matched) / Double($1.total) }
-            guard let best, let source = byName[best.name] else { return }
+    /// 心得資料夾裡屬於同一本書的檔：h1 書名跟目前這份一樣的。
+    /// 單檔心得常跟別本書的心得放在同一個資料夾，不能整個資料夾都拿來比。
+    private func rebuildChapterMap() {
+        guard let epub = book.epub else { chapterMap = .empty; return }
+        let folder: URL
+        var notes: [URL]
+        if let note = documentURL {
+            folder = note.deletingLastPathComponent()
+            let key = BookPairing.noteBookTitle(note).map(EpubBook.titleKey)
+            notes = BookPairing.markdownFiles(in: folder).filter {
+                BookPairing.noteBookTitle($0).map(EpubBook.titleKey) == key
+            }
+            if notes.isEmpty { notes = [note] }
+        } else if let location = pairedNoteLocation {
+            notes = location.single.map { [$0] } ?? BookPairing.markdownFiles(in: location.folder)
+        } else {
+            chapterMap = .empty
+            return
+        }
+        chapterMap = ChapterMap.build(toc: epub.toc, notes: notes)
+    }
 
-            let alert = NSAlert()
-            alert.messageText = "找到 \(best.matched) 條可能屬於這個檔案的標記"
-            let stem = String(best.name.dropLast(SidecarFile.suffix.count))
-            alert.informativeText = "來自「\(stem)」（共 \(best.total) 條，對得上 \(best.matched) 條）。原檔可能被改名了，要接上嗎？"
-            alert.addButton(withTitle: "接上")
-            alert.addButton(withTitle: "不要")
-            let apply: (NSApplication.ModalResponse) -> Void = { response in
-                guard response == .alertFirstButtonReturn, self.documentURL == url else { return }
-                let target = SidecarFile.url(for: url)
-                guard !FileManager.default.fileExists(atPath: target.path) else { return }
-                do {
-                    try FileManager.default.moveItem(at: source.url, to: target)
-                    self.bridge?.setHighlights(self.loadSidecar(for: url))
-                } catch {
-                    self.bridge?.setHighlightBanner("無法接上標記檔：\(error.localizedDescription)", actions: [])
+    // MARK: - 手動指定對應書籍
+
+    func chooseBookManually() {
+        guard let note = documentURL else { return }
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.epub]
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.message = "選擇「\(note.deletingLastPathComponent().lastPathComponent)」對應的書"
+        panel.directoryURL = (pairedBookURL ?? note).deletingLastPathComponent()
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        settings.setBookPair(folder: note.deletingLastPathComponent(), book: url)
+        compareEnabled = true
+        refreshPairing()
+    }
+
+    var hasManualPair: Bool {
+        guard let note = documentURL else { return false }
+        return settings.bookPairs[note.deletingLastPathComponent().path] != nil
+    }
+
+    func clearManualPair() {
+        guard let note = documentURL else { return }
+        settings.setBookPair(folder: note.deletingLastPathComponent(), book: nil)
+        refreshPairing()
+    }
+
+    // MARK: - 同步（docs/SPEC.md 13.6）
+
+    /// 心得的標題被點（內文或側欄）：書捲到對應位置。
+    func syncBook(fromNoteHeading id: String) {
+        guard isComparing, let note = documentURL, let item = outline.first(where: { $0.id == id }) else { return }
+        let mapped = chapterMap.chapters(in: note)
+        guard !mapped.isEmpty else {
+            book.bridge?.toast("這一章在書裡找不到對應的章節")
+            return
+        }
+        var chapters = mapped
+        var quiet = item.level == 1
+        // 單檔心得：往回找最近一個「是某一章章名」的標題
+        let headed = mapped.filter { chapterMap.targets[$0]?.heading != nil }
+        if !headed.isEmpty, let index = outline.firstIndex(where: { $0.id == id }) {
+            var found: Int?
+            for h in outline[...index].reversed() {
+                let key = ChapterMap.normalize(h.text)
+                if let c = headed.first(where: { chapterMap.targets[$0]?.heading.map(ChapterMap.normalize) == key }) {
+                    found = c
+                    if h.id == id { quiet = true }
+                    break
                 }
             }
-            if let window = self.window { alert.beginSheetModal(for: window, completionHandler: apply) }
-            else { apply(alert.runModal()) }
+            guard let found else {
+                book.bridge?.toast("這一節之前沒有對應的章節")
+                return
+            }
+            chapters = [found]
         }
+        book.bridge?.syncTo(["chapters": chapters, "text": item.text, "quiet": quiet,
+                             "background": isTabbed && selectedTab != .book])
+    }
+
+    /// 書翻到目前這份心得的那一章（章首）。
+    private func syncBookToCurrentNote() {
+        guard let note = documentURL else { return }
+        let chapters = chapterMap.chapters(in: note)
+        guard let first = chapters.first else { return }
+        book.queueSync(["chapters": [first], "text": NSNull(), "quiet": true, "background": true])
+    }
+
+    /// 書的標題被點：心得換到那一章、捲到對應的標題。
+    /// 目錄的子項目（「1.1 投資組合存續年數」）多半對不到心得，往上找有對應的上層章。
+    private func mappedChapter(_ chapter: Int) -> Int? {
+        guard let toc = book.epub?.toc, chapter >= 0, chapter < toc.count, chapter < chapterMap.targets.count else { return nil }
+        if chapterMap.targets[chapter] != nil { return chapter }
+        var level = toc[chapter].level
+        var i = chapter - 1
+        while i >= 0 && level > 1 {
+            if toc[i].level < level {
+                if chapterMap.targets[i] != nil { return i }
+                level = toc[i].level
+            }
+            i -= 1
+        }
+        return nil
+    }
+
+    func syncNote(fromBookChapter chapter: Int, text: String?, quiet: Bool) {
+        guard let mapped = mappedChapter(chapter), let target = chapterMap.targets[mapped] else {
+            if text != nil { book.bridge?.toast("這一章還沒有心得") }
+            return
+        }
+        // 只有書、沒有心得：對照開關關著就不換
+        if documentURL == nil && !compareEnabled { return }
+        let request: [String: Any] = [
+            "scope": target.heading ?? NSNull(),
+            "text": text ?? NSNull(),
+            "quiet": quiet || text == nil,
+            "background": isTabbed && selectedTab != .note,
+        ]
+        if documentURL?.path == target.file.path {
+            bridge?.syncTo(request)
+            return
+        }
+        // 換檔：渲染完再同步
+        claimNote(target.file) { [self] ok in
+            if ok { queueSync(request) }
+            else { book.bridge?.toast("那章的心得開在其他視窗") }
+        }
+    }
+
+    /// 固定版面翻頁跨過章界：心得自動換到那一章（docs/SPEC.md 13.9）。
+    func bookChapterTurned(to chapter: Int) {
+        guard isComparing, let mapped = mappedChapter(chapter), let target = chapterMap.targets[mapped] else { return }
+        if documentURL?.path == target.file.path && target.heading == nil { return }
+        syncNote(fromBookChapter: mapped, text: nil, quiet: true)
+    }
+
+    // MARK: - 關窗
+
+    override func prepareToClose() {
+        super.prepareToClose()
+        book.prepareToClose()
     }
 
     // MARK: - 字級
@@ -456,7 +569,8 @@ final class DocumentState: ObservableObject, Identifiable {
     }
 
     func pushAppearance() {
-        bridge?.setAppearance(resolvedAppearance)
+        let mode = resolvedAppearance
+        panes.forEach { $0.bridge?.setAppearance(mode) }
     }
 
     // MARK: - 外部程式
@@ -474,14 +588,18 @@ final class DocumentState: ObservableObject, Identifiable {
         NSWorkspace.shared.open(url)
     }
 
-    func openExternal(_ url: URL) {
-        NSWorkspace.shared.open(url)
+    // MARK: - 網頁端的互動
+
+    override func headingClicked(id: String, text: String, level: Int, chapter: Int?, isChapterTitle: Bool) {
+        syncBook(fromNoteHeading: id)
     }
 }
 
-/// Swift 對網頁端說話的介面，由 WebPane 的 Coordinator 實作。一個視窗一份。
+/// Swift 對網頁端說話的介面，由 WebPane 的 Coordinator 實作。一欄一份。
 @MainActor
 protocol WebBridge: AnyObject {
+    var isReady: Bool { get }
+
     func setTheme(_ name: String)
     func setAppearance(_ mode: String)
     func setFontFamily(_ name: String)
@@ -505,4 +623,13 @@ protocol WebBridge: AnyObject {
     func commitNote(completion: @escaping (String?) -> Void)
     func probeHighlights(_ candidates: [[String: String]],
                          completion: @escaping ([(name: String, matched: Int, total: Int)]) -> Void)
+
+    // 書與同步（docs/SPEC.md 13.10）
+    func setBook(_ book: EpubBook?)
+    func renderBook(_ payload: [String: Any], keepScroll: Bool, highlights: [String: Any]?)
+    func renderBookError(_ text: String)
+    func scrollToChapter(_ index: Int)
+    func syncTo(_ request: [String: Any])
+    func revealPendingSync()
+    func toast(_ text: String)
 }

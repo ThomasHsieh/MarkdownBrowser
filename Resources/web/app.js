@@ -87,8 +87,12 @@ function restoreAnchor(anchor) {
 const MB = {};
 window.MB = MB;
 
+let renderedAt = 0;
+
 MB.render = function (markdown, opts) {
   opts = opts || {};
+  renderedAt = Date.now();
+  if (window.MBBook) window.MBBook.deactivate();
   const anchor = opts.keepScroll ? captureAnchor() : null;
   const hl = window.MBHighlights;
   const kept = hl ? hl.beforeRender() : null;   // 換內容前先把標記位置寫回錨點欄位
@@ -150,12 +154,205 @@ MB.setUserFonts = function (css) {
 
 MB.scrollToHeading = function (id) {
   const el = document.getElementById(id);
-  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); settleOn(el); }
 };
+
+/* ── 對照同步（docs/SPEC.md 13.6）──────────────────────────
+ * 點一邊的標題，Swift 轉給另一邊的 MB.syncTo。這裡是心得那欄的版本：
+ * scope 是單檔心得裡那一章的標題，沒有就是整份；text 是書那邊被點的標題。
+ */
+
+/* 標題比對用的正規化：去「第 X 章」、去開頭的「一、」「1.」「（二）」編號、去標點。 */
+function normHeading(s) {
+  let t = (s || '').toLowerCase().replace(/\s+/g, '');
+  t = t.replace(/第[0-9０-９〇零一二三四五六七八九十百兩]+[章部篇節講課回卷]/g, '');
+  t = t.replace(/^(chapter|part)[0-9]+/, '');
+  for (let i = 0; i < 2; i++) {
+    t = t.replace(/^(?:[（(【\[][0-9０-９一二三四五六七八九十百]+[）)】\]]|[0-9０-９一二三四五六七八九十百]+[、.．:：])/, '');
+  }
+  return t.replace(/[^\p{L}\p{N}]/gu, '');
+}
+
+/* 在候選標題裡找最像的：完全相同 > 前綴相同 > 包含；同一級比重疊的字數。
+ * 太短的不算，免得「兩件大事」之類亂跳。
+ * 心得標題常寫成「活出有使命的人生｜做個有用的人」：章名與小節名都在裡面，
+ * 要對的是最後那段（最具體的），對不到才用整句。 */
+function bestHeading(candidates, text) {
+  const parts = (text || '').split(/[｜|]/).map((p) => p.trim()).filter(Boolean);
+  if (parts.length > 1) {
+    const hit = matchHeading(candidates, parts[parts.length - 1]);
+    if (hit) return hit;
+  }
+  return matchHeading(candidates, text);
+}
+
+function matchHeading(candidates, text) {
+  const q = normHeading(text);
+  if (q.length < 2) return null;
+  let best = null, bestScore = 0;
+  for (const el of candidates) {
+    const c = normHeading(el.textContent);
+    if (!c) continue;
+    const short = Math.min(c.length, q.length);
+    let tier = 0;
+    if (c === q) tier = 3;
+    else if (short >= 4 && (c.startsWith(q) || q.startsWith(c))) tier = 2;
+    else if (short >= 4 && (c.includes(q) || q.includes(c))) tier = 1;
+    const score = tier ? tier * 1000 + short : 0;
+    if (score > bestScore) { bestScore = score; best = el; }
+  }
+  return best;
+}
+
+let pendingSync = null;      // tab 模式下在背景捲好的那一欄，切過去時才閃
+
+function flash(el) {
+  if (!el) return;
+  el.classList.remove('mb-sync-flash');
+  void el.offsetWidth;                                  // 重設動畫
+  el.classList.add('mb-sync-flash');
+}
+
+/* 捲到目標並閃一下。看不到這一欄（tab 模式的背景）就先記著，切過來時才閃。 */
+/* 使用者自己動過（捲動、按鍵、點擊）就不再替他校正捲動位置 */
+let lastUserInput = 0;
+['wheel', 'keydown', 'mousedown', 'touchstart'].forEach((t) =>
+  window.addEventListener(t, () => { lastUserInput = Date.now(); }, { passive: true, capture: true }));
+
+/* 內文的圖片與字型都載完（或最多等 4 秒）之後。字型晚到會讓整本重新斷行 ——
+ * 冷啟動時霞鶩文楷要好幾秒才解完，位移比圖片還大。 */
+function afterLayout(done) {
+  const pending = [...content.querySelectorAll('img')].filter((img) => !img.complete);
+  let left = pending.length + 1, fired = false;
+  const finish = () => { if (!fired) { fired = true; requestAnimationFrame(done); } };
+  const one = () => { if (--left === 0) finish(); };
+  pending.forEach((img) => {
+    img.addEventListener('load', one, { once: true });
+    img.addEventListener('error', one, { once: true });
+  });
+  document.fonts.ready.then(one, one);
+  setTimeout(finish, 4000);
+}
+
+/* 捲到目標之後，版面可能還在變（圖片剛載完、字型剛換好），目標就偏掉了。
+ * 晚一點檢查，版面穩了再檢查一次，偏了就再對齊。使用者自己動過就不管。 */
+function settleOn(target) {
+  if (!target) return;
+  const started = Date.now();
+  const fix = () => {
+    if (lastUserInput > started || !target.isConnected) return;
+    const top = target.getBoundingClientRect().top;
+    if (Math.abs(top) > 40) target.scrollIntoView({ block: 'start' });
+    keptAnchor = anchorNow();
+  };
+  setTimeout(fix, 700);
+  afterLayout(fix);
+}
+
+function landSync(target, req, matched, missText) {
+  const background = !!req.background;
+  if (target) target.scrollIntoView({ behavior: background ? 'auto' : 'smooth', block: 'start' });
+  else window.scrollTo({ top: 0, behavior: background ? 'auto' : 'smooth' });
+  settleOn(target);
+  const note = !matched && !req.quiet ? missText : null;
+  if (background) { pendingSync = { el: target, toast: note }; return; }
+  setTimeout(() => flash(target), 250);
+  if (note) MB.toast(note);
+}
+
+MB.syncTo = function (req) {
+  if (window.MBBook && window.MBBook.active) return window.MBBook.syncTo(req);
+  const heads = [...content.querySelectorAll('h1, h2, h3, h4')];
+  let scope = null, range = heads;
+  if (req.scope) {
+    const key = normHeading(req.scope);
+    scope = heads.find((h) => normHeading(h.textContent) === key) || bestHeading(heads, req.scope);
+    if (scope) {
+      const level = parseInt(scope.tagName.substring(1), 10);
+      const start = heads.indexOf(scope);
+      let end = heads.length;
+      for (let i = start + 1; i < heads.length; i++) {
+        if (parseInt(heads[i].tagName.substring(1), 10) <= level) { end = i; break; }
+      }
+      range = heads.slice(start, end);
+    }
+  }
+  const hit = req.text ? bestHeading(range, req.text) : null;
+  landSync(hit || scope, req, !!hit || !req.text, '找不到對應小節，已跳到章首');
+};
+
+MB.revealPendingSync = function () {
+  if (!pendingSync) return;
+  const p = pendingSync;
+  pendingSync = null;
+  setTimeout(() => { flash(p.el); if (p.toast) MB.toast(p.toast); }, 50);
+};
+
+const toastEl = document.createElement('div');
+toastEl.id = 'mb-toast';
+document.body.appendChild(toastEl);
+let toastTimer = null;
+
+MB.toast = function (text) {
+  toastEl.textContent = text;
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2200);
+};
+
+/* 點內文的標題：交給 Swift 轉給另一欄。拖選文字、點標記、點連結都不算。 */
+content.addEventListener('click', (e) => {
+  const h = e.target.closest('h1, h2, h3, h4');
+  if (!h || !content.contains(h)) return;
+  if (e.target.closest('a, mark.mb-hl')) return;
+  if (!window.getSelection().isCollapsed) return;
+  const msg = {
+    type: 'headingClicked',
+    id: h.id,
+    text: h.textContent.trim(),
+    level: parseInt(h.tagName.substring(1), 10),
+  };
+  if (window.MBBook && window.MBBook.active) Object.assign(msg, window.MBBook.describeHeading(h));
+  toSwift(msg);
+});
+
+/* 最後點過的那一欄是焦點欄：⌘F、⌘P、標記都作用在它身上。 */
+document.addEventListener('mousedown', () => toSwift({ type: 'focus' }), true);
 
 MB.print = function () {
   window.print();
 };
+
+/* ── 寬度改變時守住閱讀位置 ─────────────────────────────
+ * 拖分隔線、縮放視窗、切 tab 都會改變欄寬，上方的文字重新斷行，WebKit 沒有
+ * scroll anchoring，讀到的地方就整段漂走。捲動停下時記住「畫面頂端是哪裡」，
+ * 寬度一變就回到那裡；縮放過程中重排引起的捲動不算數。
+ */
+let keptAnchor = null, lastWidth = window.innerWidth, resizing = 0;
+
+function anchorNow() {
+  const book = window.MBBook;
+  return book && book.active ? book.captureAnchor() : captureAnchor();
+}
+
+function anchorRestore(anchor) {
+  const book = window.MBBook;
+  if (book && book.active) book.restoreAnchor(anchor); else restoreAnchor(anchor);
+}
+
+let keepTimer = null;
+window.addEventListener('scroll', () => {
+  if (Date.now() < resizing) return;
+  clearTimeout(keepTimer);
+  keepTimer = setTimeout(() => { if (Date.now() >= resizing) keptAnchor = anchorNow(); }, 150);
+}, { passive: true });
+
+window.addEventListener('resize', () => {
+  if (window.innerWidth === lastWidth) return;   // 只有高度變了，斷行不變
+  lastWidth = window.innerWidth;
+  resizing = Date.now() + 300;
+  if (keptAnchor) anchorRestore(keptAnchor);
+});
 
 /* ── 大綱高亮 ───────────────────────────────────────── */
 
@@ -273,10 +470,23 @@ MB.closeFind = function () {
 
 MB.findNext = function () { step(1); };
 
-/* 標記重畫時要先清掉搜尋命中、畫完再補回來（見 highlights.js 的 paint）。 */
+/* 標記重畫時要先清掉搜尋命中、畫完再補回來（見 highlights.js 的 paint）。
+ * 後半是給 book.js 共用的。 */
 MB.internal = {
   clearHits,
   rerunFind() { if (findState.query) runFind(findState.query, false); },
+  slugify,
+  captureAnchor,
+  restoreAnchor,
+  normHeading,
+  bestHeading,
+  landSync,
+  settleOn,
+  afterLayout,
+  userMoved(since) { return lastUserInput > (since || renderedAt); },
+  markRendered() { renderedAt = Date.now(); },
+  toSwift,
+  closeFind() { if (!findBar.hidden) MB.closeFind(); },
 };
 MB.findPrev = function () { step(-1); };
 

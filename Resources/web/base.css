@@ -379,3 +379,119 @@ mark.mb-hl.mb-flash { animation: mb-flash 1.1s ease-in-out; }
   cursor: pointer;
   white-space: nowrap;
 }
+
+/* ── 書（docs/SPEC.md 13.5）────────────────────────────
+ * 書的 CSS 讀完就丟了，這裡只有 book.js 轉出來的那一小組語意 class。
+ * 顏色一律沿用主題變數，所以書跟心得長得一樣。 */
+
+/* ★ 書裡的粗體也只換色、不加粗 —— 跟 strong 同一條規則 */
+.mb-book .mb-b {
+  font-weight: normal;
+  color: var(--accent);
+}
+mark.mb-hl .mb-b { color: var(--hl-accent); }
+.mb-book .mb-nb { color: var(--fg); }
+.mb-book .mb-i { font-style: italic; }
+.mb-book .mb-center { text-align: center; }
+.mb-book .mb-right { text-align: right; }
+.mb-book .mb-left { text-align: start; }
+.mb-book p.mb-indent { text-indent: 2em; }
+.mb-book .mb-small { font-size: 0.86em; }
+.mb-book .mb-sup { vertical-align: super; font-size: 0.75em; }
+.mb-book .mb-hidden,
+.mb-book .mb-fn { display: none; }
+
+/* 一個 spine 檔一段。章與章之間留白，不畫線 —— 有些 spine 檔只是一張圖 */
+.mb-book section.mb-chapter + section.mb-chapter { margin-top: 4em; }
+.mb-book img,
+.mb-book svg { max-width: 100%; max-height: 92vh; height: auto; object-fit: contain; }
+.mb-book figure { margin: 1.6em 0; text-align: center; }
+.mb-book figcaption { color: var(--muted); font-size: 0.9em; }
+.mb-book aside { margin: 1.4em 0; padding: 0.6em 1em; border-left: 2px solid var(--rule); }
+.mb-book sup a, .mb-book a[data-internal] { cursor: pointer; }
+
+.mb-book-error {
+  color: var(--muted);
+  text-align: center;
+  padding-top: 6rem;
+}
+
+/* 注腳浮框 */
+#mb-footnote {
+  display: none;
+  position: absolute;
+  z-index: 25;
+  max-width: min(32em, calc(100vw - 32px));
+  max-height: 50vh;
+  overflow: auto;
+  padding: 0.7em 1em;
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--rule);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  font-size: 0.9em;
+  line-height: 1.75;
+}
+#mb-footnote.show { display: block; }
+#mb-footnote > :last-child { margin-bottom: 0; }
+#mb-footnote .mb-b { font-weight: normal; color: var(--accent); }
+#mb-footnote .mb-i { font-style: italic; }
+
+/* ── 固定版面（docs/SPEC.md 13.9）：不套主題，頁面就是書自己的樣子 ── */
+.mb-fixed-mode #content { padding: 0; }
+#mb-fxl {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px 12px 8px;
+  user-select: none;
+}
+.mb-fxl-stage { display: flex; justify-content: center; }
+.mb-fxl-page { overflow: hidden; background: #fff; }
+.mb-fxl-page iframe {
+  border: 0;
+  transform-origin: 0 0;
+  pointer-events: none;     /* 鍵盤與觸控板翻頁要留在外層 */
+  background: #fff;
+}
+.mb-fxl-indicator {
+  color: var(--muted);
+  font: 12px -apple-system, sans-serif;
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+.mb-fixed-mode body { overflow: hidden; }
+
+/* ── 對照同步（docs/SPEC.md 13.6）──────────────────────── */
+
+/* 被帶動的那一欄，目標標題閃一下底色 */
+@keyframes mb-sync-flash {
+  0% { background: transparent; }
+  20%, 60% { background: rgba(221, 152, 83, 0.28); }
+  100% { background: transparent; }
+}
+.mb-sync-flash { animation: mb-sync-flash 1.1s ease-in-out; border-radius: 3px; }
+
+#mb-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 1.4rem;
+  transform: translateX(-50%) translateY(8px);
+  z-index: 30;
+  max-width: calc(100% - 2rem);
+  padding: 0.45rem 0.9rem;
+  border-radius: 8px;
+  background: var(--code-bg);
+  color: var(--fg);
+  border: 1px solid var(--rule);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  font: 13px -apple-system, sans-serif;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s, transform 0.2s;
+}
+#mb-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }

@@ -33,27 +33,33 @@ SwiftUI（視窗、選單、Finder 關聯、檔案監聽、側欄）
         │  evaluateJavaScript("MB.xxx(…)")  ↓
         │  webkit.messageHandlers.mb.postMessage({type, …})  ↑
         ▼
-WKWebView（內容區：markdown-it + base.css + themes/*.css，一個視窗一份）
-        └── highlights.js：標記與註記（docs/SPEC.md 第 12 節）
+WKWebView（內容區：markdown-it + base.css + themes/*.css，一欄一份）
+        ├── highlights.js：標記與註記（docs/SPEC.md 第 12 節）
+        └── book.js：EPUB 那欄（docs/SPEC.md 第 13 節）
 ```
+
+對照模式下一個視窗有兩欄（左書右心得），各自一個 WKWebView。
 
 Swift 端只做殼，**所有排版都在 CSS 裡**。切主題只是換 `<html>` 上一個
 `data-theme` 屬性，Swift 完全不知道主題長什麼樣。
 
-多視窗。Swift 端的狀態按「範圍」切成三份，不是按功能切：
+多視窗。Swift 端的狀態按「範圍」切，不是按功能切：
 
 | | 範圍 | 內容 |
 |---|---|---|
-| `DocumentState` | 一個視窗一份 | 讀哪個檔、側欄、主題、字體、字級、外觀 |
+| `PaneDocument` | 一欄一份 | 讀哪個檔、大綱、標記、sidecar、檔案監聽 |
+| `DocumentState` | 一個視窗一份 | 心得那欄（繼承 `PaneDocument`）＋側欄、主題、字體、字級、外觀、對照開關、`book` |
+| `BookPane` | 一個視窗一份 | 書那欄（繼承 `PaneDocument`），EPUB 解析結果與閱讀位置 |
 | `AppSettings` | 全 App（單例） | 新視窗的起始設定、最近開啟、自訂主題目錄 |
 | `WindowRouter` | 全 App（單例） | 誰開著、誰在前景、下一個檔案開到哪裡 |
 
 - 設定用 `@Published` + `didSet` 同時寫回 `AppSettings`（當新視窗的起始值）
   並推給自己那個視窗的網頁端，沒有其他同步路徑
 - `WebBridge` protocol 是 Swift → JS 的唯一介面，由 `WebPane.Coordinator` 實作，
-  一個視窗一份
-- JS → Swift 有八種訊息：`ready`、`outline`、`activeHeading`、`openExternal`，
-  以及標記的 `highlights`、`saveHighlights`、`copy`、`bannerAction`。需要回傳值的
+  一欄一份。兩欄之間不直接溝通，一律經過 Swift 轉送（章名對應、換檔、搬視窗都要 Swift）
+- JS → Swift 有十一種訊息：`ready`、`outline`、`activeHeading`、`openExternal`，
+  標記的 `highlights`、`saveHighlights`、`copy`、`bannerAction`，以及對照的
+  `headingClicked`、`bookPosition`、`focus`。需要回傳值的
   呼叫（`highlightSelection`、`commitNote`、`probeHighlights`）用 `evaluateJavaScript`
   的完成回呼拿，不另外設計訊息
 - **選單與按鍵監聽一律作用在 `WindowRouter.active` 上。** SwiftUI 的 focus 環境在
@@ -63,7 +69,21 @@ Swift 端只做殼，**所有排版都在 CSS 裡**。切主題只是換 `<html>
   選單與側欄走 `openInActiveWindow`（換掉前景視窗）。細節見 `docs/SPEC.md` 第 11 節
 - **一檔一窗**：同一個檔只會開在一個視窗裡，視窗內換檔一律走
   `WindowRouter.open(_:in:)`，不要直接呼叫 `DocumentState.open`。每個視窗的網頁端
-  各自是標記資料的唯一真相，同一個檔開兩份就會互相覆蓋 sidecar
+  各自是標記資料的唯一真相，同一個檔開兩份就會互相覆蓋 sidecar。**EPUB 也一樣**：
+  「誰在讀這個檔」要同時看心得與書兩欄（`isShowing`）；對照時書或心得在別的視窗，
+  就用 `WindowRouter.takeBook` / `takeNote` 搬過來（SPEC 13.7），不是開第二份
+
+### 書與對照
+
+EPUB 的規格在 `docs/SPEC.md` 第 13 節。最容易被改壞的：
+
+- **書的 CSS 只拿來讀，不拿來顯示**。`book.js` 在看不見的 iframe 裡套書的 CSS，用
+  `getComputedStyle` 轉成 `mb-b`／`mb-i`／`mb-center`… 再全部丟掉。直接套書的 CSS，
+  書裡的粗體就會真的加粗，違反核心不變量
+- 書的配對與章節對應是開檔當下算的（`BookPairing`、`ChapterMap`），不存書目。
+  只有手動指定、各資料夾上次讀的心得、書的閱讀位置存在 UserDefaults
+- 改 `ChapterMap` 的比對規則之前，先拿現有四本書（書 A、書 B、書 C、
+  書 D）跑一遍看結果 —— SPEC 13.6 那幾條規則都是被真實資料逼出來的
 
 ### 標記
 
@@ -109,7 +129,7 @@ Swift 端只做殼，**所有排版都在 CSS 裡**。切主題只是換 `<html>
 
 - **新增 bridge 方法**：三處要一起改 —— `DocumentState.swift` 底部的 `WebBridge`
   protocol、`WebPane.Coordinator` 的實作、`app.js` 的 `MB.xxx`（標記相關的在
-  `highlights.js`）
+  `highlights.js`，書相關的在 `book.js`）
 - **新增主題 CSS 變數**：`base.css` 的 `:root` 補安全網值，兩個主題檔都要提供。
   標記的 `--hl-*` 也一樣，淺色模式那組要另外驗算標記內粗體（`--hl-accent`）的對比
 - **改主題顏色**：淺色覆寫寫在**各自的主題檔裡**（
@@ -120,7 +140,9 @@ Swift 端只做殼，**所有排版都在 CSS 裡**。切主題只是換 `<html>
 - **新增選單項目**：`MarkdownBrowserApp.swift` 的 `menus`，動作對象是
   `router.active`（Picker 用 `activeBinding(_:fallback:)`）；工具列在
   `ContentView.swift` 的 `toolbarItems`，直接用自己視窗的 `state`。
-  `⌘N`、`⌘O`、`⌘1`–`⌘4`、`⇧⌘H` 已被佔用
+  `⌘N`、`⌘O`、`⌘1`–`⌘4`、`⇧⌘H`、`⇧⌘B`、`⌃Tab` 已被佔用
+- **選單與按鍵作用在焦點欄**：搜尋、列印、標記走 `router.active?.focusedBridge`，
+  不是 `bridge`（那只是心得那欄）
 
 ## 踩過的坑（改到附近時別踩回去）
 
@@ -165,6 +187,23 @@ Swift 端只做殼，**所有排版都在 CSS 裡**。切主題只是換 `<html>
   用 bundle ID 帶到前景的工具（UI 自動化的前景模式、`⌘Q`）可能作用到安裝版
 - **一個視窗都沒有時不要搶著開窗**，先存起來等 SwiftUI 那個視窗出現再接手；
   `register` 裡待開的檔要晚一個 runloop 處理，否則撞進 SwiftUI 的更新週期
+- **書的圖片不能在讀 CSS 的 iframe 裡開始載**：iframe 一拿掉，還沒載完的全部中斷變破圖。
+  圖少的書剛好來得及，看不出問題；《書 D》101 張圖幾乎全破。位址先放 `data-mb-src`
+- **書的 CSS 要一章一章套**：某一頁自帶的 `<style>p{...}</style>` 整本一起套就會漏到全書。
+  轉語意 class 時「粗體改回一般」（`mb-nb`）、「置中改回靠左」（`mb-left`）也要轉 ——
+  粗體是顏色，會往下繼承
+- **版面在回位之後還會變**：圖片與字型晚到會讓整本重新斷行。回位、同步之後都要再校正一次
+  （`afterLayout`、`settleOn`），而且使用者自己動過就不能再拉回去。欄寬改變（拖分隔線、縮放視窗）
+  也一樣會漂，`app.js` 在 resize 時回到捲動停下時記住的位置
+- **整本書串成一條時，任何「每個標題做一次 O(n)」的事都會變慢**：`highlights.js` 的
+  `headingOffsets` 是一次走完整份文件算的，不要改回每個標題各建一個 Range
+- **兩個 `WebPane` 不能因為切雙欄／tab 而改變視圖結構**，只能改大小與透明度，
+  否則 SwiftUI 會重建 WKWebView（見 `ReadingArea`）
+- **實機測試用另一個 bundle ID 的副本**：複製 `.build/MarkdownBrowser.app`，用
+  PlistBuddy 改 `CFBundleIdentifier`（例如加 `.epubtest`）再 ad-hoc 簽章。UserDefaults
+  就跟安裝版分開，不會把測試檔寫進「最近開啟」。標記要測就拿 EPUB 的副本，別在
+  `~/books/` 旁邊生出 sidecar。UI 自動化點不到 SwiftUI 的 List 與分段控制，
+  側欄與 tab 要用快捷鍵或網頁內的點擊測
 
 ## 慣例
 
@@ -172,7 +211,7 @@ Swift 端只做殼，**所有排版都在 CSS 裡**。切主題只是換 `<html>
 - 註解只寫「為什麼這樣做」與「試過什麼失敗了」，不複述程式碼
 - 版本號用日期 `YYYY.MM.DD`（`Info.plist` 的 `CFBundleShortVersionString`
   與 `CHANGELOG.md` 要同步）
-- 明確不做的事：編輯功能、書庫管理、Mermaid、KaTeX
+- 明確不做的事：編輯功能、書庫管理、Mermaid、KaTeX（EPUB 對照不算書庫管理，見 SPEC 第 2 節）
 - 命名尚未定案。中文名「硃閱」已定，英文名待決定，目前語義首選 Cinnabar；
   現況與待改清單見 `docs/NAMING.md`（根目錄的 `APP-NAMING.md` 是較早的
   發想紀錄）。專案目錄與 bundle ID 維持 `MarkdownBrowser` /

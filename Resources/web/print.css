@@ -59,6 +59,8 @@ mark.mb-hl {
 mark.mb-hl strong, mark.mb-hl b { color: var(--accent) !important; }
 mark.mb-hl.mb-note-end::after { display: none !important; }
 #hl-bar, #hl-tip, #hl-banner { display: none !important; }
+#mb-toast, #mb-footnote { display: none !important; }
+.mb-book .mb-b { color: var(--accent) !important; }
 
 h1, h2, h3, h4 {
   break-after: avoid;

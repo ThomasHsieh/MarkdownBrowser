@@ -77,7 +77,7 @@ final class WindowRouter: ObservableObject {
             // 失焦就把打到一半的註記寫入：切去 cmux 叫 Claude 改檔時，字先落地，
             // 也堵住「另一個視窗拿舊清單寫回去」的競態
             center.addObserver(forName: NSWindow.didResignKeyNotification, object: window, queue: .main) { _ in
-                MainActor.assumeIsolated { document.bridge?.commitNote { _ in } }
+                MainActor.assumeIsolated { document.panes.forEach { $0.bridge?.commitNote { _ in } } }
             },
             center.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { _ in
                 MainActor.assumeIsolated {
@@ -133,9 +133,41 @@ final class WindowRouter: ObservableObject {
         if activate { document.bringToFront() }
     }
 
-    private func window(reading url: URL) -> DocumentState? {
+    /// 哪個視窗在讀這個檔 —— 心得那欄或書那欄都算。
+    func window(reading url: URL) -> DocumentState? {
         let path = url.resolvingSymlinksInPath().path
-        return documents.first { $0.documentURL?.path == path }
+        return documents.first { $0.isShowing(path) }
+    }
+
+    // MARK: - 對照組往正在操作的視窗集中（docs/SPEC.md 13.7）
+
+    /// 書要開在 `target`，但已經開在別的視窗：從那個視窗撤走（變回單欄）再交過來。
+    /// 撤走前先把註記寫完，閱讀位置平常就隨捲動存著，打開時自然回位。
+    func takeBook(_ url: URL, into target: DocumentState, then done: @escaping () -> Void) {
+        let path = url.resolvingSymlinksInPath().path
+        guard let other = documents.first(where: { $0 !== target && $0.book.documentURL?.path == path }) else {
+            done(); return
+        }
+        other.book.release {
+            if other.isEmpty { other.window?.close() }
+            done()
+        }
+    }
+
+    /// 心得要開在 `target`，但已經開在別的視窗：搬過來，那個視窗因此空了就關掉。
+    /// 例外是那個視窗另外配了別本書（手動指定）—— 那是另一組對照，不拆（回呼 false）。
+    func takeNote(_ url: URL, into target: DocumentState, then done: @escaping (Bool) -> Void) {
+        let path = url.resolvingSymlinksInPath().path
+        guard let other = documents.first(where: { $0 !== target && $0.documentURL?.path == path }) else {
+            done(true); return
+        }
+        if let otherBook = other.book.documentURL, otherBook != target.book.documentURL {
+            done(false); return
+        }
+        other.releaseNote {
+            if other.isEmpty { other.window?.close() }
+            done(true)
+        }
     }
 
     func openPanel() {
@@ -193,7 +225,7 @@ final class WindowRouter: ObservableObject {
             MainActor.assumeIsolated {
                 let router = WindowRouter.shared
                 let missing = urls.filter { url in
-                    !router.documents.contains { $0.documentURL?.path == url.path }
+                    !router.documents.contains { $0.isShowing(url.path) }
                 }
                 guard !missing.isEmpty else { return }
                 for url in missing { router.openFromFinder(url) }
@@ -205,12 +237,12 @@ final class WindowRouter: ObservableObject {
     private func openFromFinder(_ url: URL) {
         let resolved = url.resolvingSymlinksInPath()
 
-        if let existing = documents.first(where: { $0.documentURL?.path == resolved.path }) {
+        if let existing = documents.first(where: { $0.isShowing(resolved.path) }) {
             existing.bringToFront()
             return
         }
 
-        if let empty = documents.first(where: { $0.documentURL == nil }) {
+        if let empty = documents.first(where: { $0.isEmpty }) {
             empty.open(resolved)
             empty.bringToFront()
             return
@@ -271,7 +303,7 @@ final class WindowRouter: ObservableObject {
         guard !didRestoreLastDocument else { return }
         didRestoreLastDocument = true
         guard pending.isEmpty else { return }
-        guard let document = documents.first, documents.allSatisfy({ $0.documentURL == nil }) else { return }
+        guard let document = documents.first, documents.allSatisfy({ $0.isEmpty }) else { return }
         guard let url = AppSettings.shared.lastDocumentURL else { return }
         document.open(url)
     }

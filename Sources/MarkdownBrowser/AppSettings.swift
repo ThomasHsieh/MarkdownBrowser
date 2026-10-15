@@ -45,6 +45,32 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(sidebarMode.rawValue, forKey: Keys.sidebarMode) }
     }
 
+    /// 對照開關：開著時心得配對到書就自動切成雙欄（docs/SPEC.md 13.3）。第一次安裝預設開。
+    var compareEnabled: Bool {
+        didSet { defaults.set(compareEnabled, forKey: Keys.compare) }
+    }
+
+    /// 雙欄的分隔線位置：書那欄佔內容區的比例。
+    var splitRatio: Double {
+        didSet { defaults.set(splitRatio, forKey: Keys.splitRatio) }
+    }
+
+    /// 手動指定的配對：心得資料夾路徑 → EPUB 路徑。同一本書的各章共用一筆。
+    private(set) var bookPairs: [String: String] {
+        didSet { defaults.set(bookPairs, forKey: Keys.bookPairs) }
+    }
+
+    /// 每個資料夾上次讀的心得。從 Finder 單獨開書、反向配對到心得時，開的就是這一份。
+    private(set) var lastNoteByFolder: [String: String] {
+        didSet { defaults.set(lastNoteByFolder, forKey: Keys.lastNoteByFolder) }
+    }
+
+    /// 每本書的閱讀位置：EPUB 路徑 → `{id, delta}`（可重排）或 `{page}`（固定版面）。
+    /// 不寫任何檔案，唯讀閱讀器打開來看不該在書旁邊留下東西。
+    private(set) var bookPositions: [String: [String: Any]] {
+        didSet { defaults.set(bookPositions, forKey: Keys.bookPositions) }
+    }
+
     /// 上次讀的檔。啟動時若沒有 Finder 指定的檔案，就還原這一份。
     var lastDocumentURL: URL? {
         guard let path = defaults.string(forKey: Keys.lastDocument),
@@ -84,6 +110,11 @@ final class AppSettings: ObservableObject {
         static let sidebarMode = "sidebarMode"
         static let lastDocument = "lastDocumentBookmark"
         static let recents = "recentDocuments"
+        static let compare = "compareEnabled"
+        static let splitRatio = "splitRatio"
+        static let bookPairs = "bookPairs"
+        static let lastNoteByFolder = "lastNoteByFolder"
+        static let bookPositions = "bookPositions"
     }
 
     private init() {
@@ -93,6 +124,11 @@ final class AppSettings: ObservableObject {
         fontSize = defaults.object(forKey: Keys.fontSize) as? Double ?? Self.defaultFontSize
         sidebarVisible = defaults.object(forKey: Keys.sidebar) as? Bool ?? true
         sidebarMode = SidebarMode(rawValue: defaults.string(forKey: Keys.sidebarMode) ?? "") ?? .outline
+        compareEnabled = defaults.object(forKey: Keys.compare) as? Bool ?? true
+        splitRatio = defaults.object(forKey: Keys.splitRatio) as? Double ?? 0.5
+        bookPairs = defaults.dictionary(forKey: Keys.bookPairs) as? [String: String] ?? [:]
+        lastNoteByFolder = defaults.dictionary(forKey: Keys.lastNoteByFolder) as? [String: String] ?? [:]
+        bookPositions = defaults.dictionary(forKey: Keys.bookPositions) as? [String: [String: Any]] ?? [:]
 
         recentDocuments = (defaults.stringArray(forKey: Keys.recents) ?? [])
             .map { URL(fileURLWithPath: $0) }
@@ -123,10 +159,36 @@ final class AppSettings: ObservableObject {
         defaults.set(list.map(\.path), forKey: Keys.recents)
     }
 
+    /// `primary` 為假是對照模式下跟著心得自動打開的書：不算「最近開啟」，
+    /// 也不當作上次讀的檔 —— 否則下次啟動會還原成單獨看書。
+    func noteOpened(_ url: URL, primary: Bool) {
+        if BookPairing.isMarkdown(url) {
+            lastNoteByFolder[url.deletingLastPathComponent().path] = url.path
+        }
+        if primary { noteOpened(url) }
+    }
+
     func clearRecentDocuments() {
         recentDocuments = []
         defaults.removeObject(forKey: Keys.recents)
         NSDocumentController.shared.clearRecentDocuments(nil)
+    }
+
+    // MARK: - 書
+
+    func setBookPair(folder: URL, book: URL?) {
+        bookPairs[folder.path] = book?.standardizedFileURL.path
+    }
+
+    func bookPosition(for book: URL) -> [String: Any]? { bookPositions[book.path] }
+
+    func setBookPosition(_ position: [String: Any], for book: URL) {
+        bookPositions[book.path] = position
+    }
+
+    func lastNote(in folder: URL) -> URL? {
+        guard let path = lastNoteByFolder[folder.path], FileManager.default.fileExists(atPath: path) else { return nil }
+        return URL(fileURLWithPath: path)
     }
 
     // MARK: - 主題

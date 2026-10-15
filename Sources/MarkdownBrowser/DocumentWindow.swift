@@ -22,7 +22,7 @@ struct DocumentWindow: View {
                 let router = WindowRouter.shared
                 router.openWindow = openWindow
                 router.register(state)
-                if state.documentURL == nil, let url = router.takeHandoff() { state.open(url) }
+                if state.isEmpty, let url = router.takeHandoff() { state.open(url) }
             }
     }
 }

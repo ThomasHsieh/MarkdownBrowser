@@ -11,6 +11,7 @@ import WebKit
 ///   mbres://app/…       → Contents/Resources/web/…
 ///   mbres://doc/…       → 目前文件所在資料夾
 ///   mbres://userfont/…  → ~/.config/markdownbrowser/fonts
+///   mbres://book/…      → 書那欄的 EPUB 裡面（直接從 ZIP 讀，不解壓）
 final class ResourceSchemeHandler: NSObject, WKURLSchemeHandler {
 
     static let scheme = "mbres"
@@ -19,6 +20,9 @@ final class ResourceSchemeHandler: NSObject, WKURLSchemeHandler {
     /// 由 AppState 在開檔時更新。
     var documentDirectory: URL?
 
+    /// 書那欄的書。
+    var book: EpubBook?
+
     func webView(_ webView: WKWebView, start task: WKURLSchemeTask) {
         guard let url = task.request.url, let host = url.host else {
             task.didFailWithError(URLError(.badURL))
@@ -26,6 +30,24 @@ final class ResourceSchemeHandler: NSObject, WKURLSchemeHandler {
         }
 
         let relative = url.path.removingPercentEncoding ?? url.path
+
+        if host == "book" {
+            let path = relative.hasPrefix("/") ? String(relative.dropFirst()) : relative
+            guard let book, let data = book.data(at: path) else {
+                task.didFailWithError(URLError(.fileDoesNotExist))
+                return
+            }
+            let mime = Self.mimeType(for: URL(fileURLWithPath: path))
+            let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1",
+                                           headerFields: ["Content-Type": mime,
+                                                          "Content-Length": String(data.count),
+                                                          "Access-Control-Allow-Origin": "*"])!
+            task.didReceive(response)
+            task.didReceive(data)
+            task.didFinish()
+            return
+        }
+
         guard let root = root(for: host), let file = resolve(relative, under: root) else {
             task.didFailWithError(URLError(.fileDoesNotExist))
             return
@@ -78,6 +100,7 @@ final class ResourceSchemeHandler: NSObject, WKURLSchemeHandler {
     private static func mimeType(for url: URL) -> String {
         switch url.pathExtension.lowercased() {
         case "html", "htm": return "text/html"
+        case "xhtml", "xht": return "application/xhtml+xml"
         case "css": return "text/css"
         case "js", "mjs": return "text/javascript"
         case "ttf": return "font/ttf"

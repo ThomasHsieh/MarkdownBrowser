@@ -4,7 +4,8 @@ import WebKit
 
 struct WebPane: NSViewRepresentable {
 
-    @ObservedObject var state: DocumentState
+    /// 這一欄的文件：心得（`DocumentState`）或書（`BookPane`）。
+    @ObservedObject var state: PaneDocument
 
     func makeCoordinator() -> Coordinator { Coordinator(state: state) }
 
@@ -41,10 +42,12 @@ struct WebPane: NSViewRepresentable {
         let schemeHandler = ResourceSchemeHandler()
         weak var webView: WKWebView?
 
-        private let state: DocumentState
+        private let state: PaneDocument
         private var ready = false
 
-        init(state: DocumentState) {
+        var isReady: Bool { ready }
+
+        init(state: PaneDocument) {
             self.state = state
         }
 
@@ -69,7 +72,7 @@ struct WebPane: NSViewRepresentable {
                     guard let id = item["id"] as? String,
                           let level = item["level"] as? Int,
                           let text = item["text"] as? String else { return nil }
-                    return OutlineItem(id: id, level: level, text: text)
+                    return OutlineItem(id: id, level: level, text: text, chapter: item["chapter"] as? Int)
                 })
 
             case "activeHeading":
@@ -95,6 +98,19 @@ struct WebPane: NSViewRepresentable {
 
             case "bannerAction":
                 if let id = body["id"] as? String { state.handleBannerAction(id) }
+
+            case "headingClicked":
+                guard let id = body["id"] as? String, let text = body["text"] as? String else { return }
+                state.headingClicked(id: id, text: text, level: body["level"] as? Int ?? 1,
+                                     chapter: body["chapter"] as? Int,
+                                     isChapterTitle: body["chapterTitle"] as? Bool ?? false)
+
+            case "bookPosition":
+                state.positionChanged(body)
+
+            case "focus":
+                // 最後點過的那一欄是焦點欄（docs/SPEC.md 13.3）
+                state.windowState?.focusedPane = state is BookPane ? .book : .note
 
             default:
                 break
@@ -189,6 +205,28 @@ struct WebPane: NSViewRepresentable {
         func setDocumentDirectory(_ url: URL) {
             schemeHandler.documentDirectory = url
         }
+
+        // MARK: 書與同步
+
+        func setBook(_ book: EpubBook?) {
+            schemeHandler.book = book
+        }
+
+        func renderBook(_ payload: [String: Any], keepScroll: Bool, highlights: [String: Any]?) {
+            guard ready else { return }
+            let extra = highlights.map { ", highlights: \(json($0))" } ?? ""
+            eval("MB.renderBook(\(json(payload)), {keepScroll: \(keepScroll)\(extra)})")
+        }
+
+        func renderBookError(_ text: String) {
+            guard ready else { return }
+            eval("MB.renderBookError(\(literal(text)))")
+        }
+
+        func scrollToChapter(_ index: Int) { eval("MB.scrollToChapter(\(index))") }
+        func syncTo(_ request: [String: Any]) { eval("MB.syncTo(\(json(request)))") }
+        func revealPendingSync() { eval("MB.revealPendingSync()") }
+        func toast(_ text: String) { eval("MB.toast(\(literal(text)))") }
 
         func printDocument() {
             guard let webView else { return }

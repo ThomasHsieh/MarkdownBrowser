@@ -59,10 +59,23 @@
     }
     r2n[raw.length] = norm.length;
     n2r.push(raw.length);
-    const heads = [...content.querySelectorAll('h1, h2, h3, h4')].map((el) => ({
-      id: el.id, text: el.textContent.trim(), raw: offsetOf(el, 0),
-    }));
-    idx = { raw, norm, n2r, r2n, heads };
+    idx = { raw, norm, n2r, r2n, heads: headingOffsets() };
+  }
+
+  /* 每個標題前面有幾個字。一次走完整份文件，而不是每個標題各建一個 Range ——
+   * 整本書串成一條時有幾百個標題，逐一 Range.toString() 是平方級的。 */
+  function headingOffsets() {
+    const els = [...content.querySelectorAll('h1, h2, h3, h4')];
+    const heads = [];
+    if (!els.length) return heads;
+    let next = 0, pos = 0;
+    const w = document.createTreeWalker(content, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+    while (w.nextNode() && next < els.length) {
+      const n = w.currentNode;
+      if (n.nodeType === Node.TEXT_NODE) pos += n.data.length;
+      else if (n === els[next]) { heads.push({ id: n.id, text: n.textContent.trim(), raw: pos }); next++; }
+    }
+    return heads;
   }
 
   function offsetOf(node, off) {

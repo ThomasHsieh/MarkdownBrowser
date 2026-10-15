@@ -14,12 +14,18 @@ struct ContentView: View {
                 Sidebar(state: state)
                     .frame(minWidth: 170, idealWidth: 240, maxWidth: 420)
             }
-            WebPane(state: state)
+            ReadingArea(state: state, book: state.book)
                 .frame(minWidth: 420, maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(minWidth: 640, minHeight: 420)
-        .navigationTitle(state.documentURL?.lastPathComponent ?? "MarkdownBrowser")
+        .navigationTitle(title)
         .toolbar { toolbarItems }
+    }
+
+    private var title: String {
+        if let url = state.documentURL { return url.lastPathComponent }
+        if let book = state.book.epub { return book.title }
+        return "MarkdownBrowser"
     }
 
     /// 常用動作也放工具列。標題與圖示都給，使用者右鍵可以自己選要不要顯示文字。
@@ -32,6 +38,14 @@ struct ContentView: View {
                 Label("側欄", systemImage: "sidebar.left")
             }
             .help("顯示或隱藏側欄　⌘\\")
+
+            Button {
+                state.toggleCompare()
+            } label: {
+                Label("對照書籍", systemImage: state.isComparing ? "book.fill" : "book")
+            }
+            .help(state.canCompare || state.isComparing ? "左書右心得對照　⇧⌘B" : "找不到對應的書或心得")
+            .disabled(!(state.canCompare || state.isComparing))
         }
 
         ToolbarItemGroup(placement: .primaryAction) {
@@ -79,7 +93,7 @@ struct ContentView: View {
             .help("調整字級　⌘+ ⌘-")
 
             Button {
-                state.bridge?.openFind()
+                state.focusedBridge?.openFind()
             } label: {
                 Label("搜尋", systemImage: "magnifyingglass")
             }
@@ -91,15 +105,15 @@ struct ContentView: View {
                 Label("用 MarkEdit 開啟", systemImage: "square.and.pencil")
             }
             .help("用 MarkEdit 開啟　⌘E")
-            .disabled(state.documentURL == nil)
+            .disabled(state.documentURL == nil || state.focusedDocument !== state)
 
             Button {
-                state.bridge?.printDocument()
+                state.focusedBridge?.printDocument()
             } label: {
                 Label("列印", systemImage: "printer")
             }
             .help("列印或匯出 PDF　⌘P")
-            .disabled(state.documentURL == nil)
+            .disabled(state.isEmpty)
         }
     }
 }
@@ -124,6 +138,13 @@ struct Sidebar: View {
                             .contentShape(Rectangle())
                             .onTapGesture { WindowRouter.shared.open(url, in: state) }
                     }
+                }
+            }
+
+            // 單獨開書：側欄下半是書的目錄（docs/SPEC.md 13.1）
+            if state.documentURL == nil, state.book.epub != nil {
+                Section("目錄") {
+                    BookContents(state: state, book: state.book)
                 }
             }
 
@@ -160,7 +181,10 @@ struct Sidebar: View {
                 .padding(.leading, CGFloat(max(0, item.level - 1)) * 10)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
-                .onTapGesture { state.bridge?.scrollToHeading(item.id) }
+                .onTapGesture {
+                    state.bridge?.scrollToHeading(item.id)
+                    state.syncBook(fromNoteHeading: item.id)
+                }
         }
     }
 
