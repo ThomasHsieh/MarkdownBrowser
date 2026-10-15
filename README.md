@@ -43,6 +43,8 @@ make icons        # 由 AppIcon-v4.png 重建透明書本圖層與 ICNS（通常
 | `⌘P` | 列印／匯出 PDF |
 | `⌘R` | 手動重新載入 |
 | `⇧⌘H` | 把選取的文字標成綠色 |
+| `⇧⌘B` | 開關左書右心得的對照 |
+| `⌃Tab` | 視窗太窄改成分頁時，切換書與心得 |
 
 **深色／淺色沒有快捷鍵**，在兩個地方切換：選單「顯示方式 → 外觀」，
 或工具列最左邊那顆**調色盤**按鈕 —— 主題在上、外觀在下，中間用分隔線隔開。
@@ -83,6 +85,20 @@ AI 在上方插入段落也對得上；原句被改寫掉的標記會列在側�
 側欄下半可以在「大綱｜標記」之間切換。列印與 PDF 不會印出標記。
 細節見 [`docs/SPEC.md`](docs/SPEC.md) 第 12 節。
 
+## EPUB 對照閱讀
+
+打開心得時，App 會用書名找到對應的 EPUB（往上找到第一個有 `.epub` 的資料夾），
+在同一個視窗左邊顯示書、右邊顯示心得。**點任一邊的標題，另一邊就捲到對應的章與小節。**
+書的下拉選單列出全書的章，有心得的章標一個圓點。書名對不到時用「檔案 → 指定對應書籍…」。
+
+書套用同一組主題與字體，書裡的粗體也只換色不加粗。書也能畫標記，存在 EPUB 旁邊的
+`<EPUB 檔名>_highlights.json`。
+
+書那欄可以切「捲動｜單頁｜雙頁」。翻頁模式四邊留白、一次翻一整頁、文字不重複，
+底部有本章頁碼與全書百分比；方向鍵、空白鍵、觸控板、滾輪、點左右留白都能翻頁。
+
+EPUB 只註冊成「可開啟」，不會搶走 Books 的預設。細節見 [`docs/SPEC.md`](docs/SPEC.md) 第 13 節。
+
 ## 自訂主題與字型
 
 ```
@@ -100,12 +116,13 @@ AI 在上方插入段落也對得上；原句被改寫掉的標記會列在側�
 
 ```
 Sources/MarkdownBrowser/   SwiftUI 外殼：視窗、選單、檔案監聽、側欄
-Resources/web/             WKWebView 內容：markdown-it、base.css、兩套主題、highlights.js（標記）
+Resources/web/             WKWebView 內容：markdown-it、base.css、兩套主題、highlights.js（標記）、book.js（EPUB）
 Resources/Info.plist       Finder 關聯與 UTI 宣告
 Resources/icons/           原生 AppIcon.icon、多尺寸 ICNS、母圖與設計說明
 ```
 
-Swift 端的狀態分三份：`DocumentState` 是一個視窗一份（讀哪個檔、主題、字體），
+Swift 端的狀態按範圍切：`PaneDocument` 是一欄一份（讀哪個檔、標記），心得那欄是
+`DocumentState`、書那欄是 `BookPane`；`DocumentState` 同時是一個視窗一份（主題、字體、對照開關），
 `AppSettings` 是跨視窗共用的（新視窗的起始設定、最近開啟、自訂主題目錄），
 `WindowRouter` 管哪些視窗開著、哪一個在前景、下一個檔案該開到哪裡。
 
@@ -114,4 +131,4 @@ Swift 端只做殼，所有排版都在 CSS 裡，所以換主題只是換一個
 ## 授權
 
 字型 LXGW WenKai TC 與 Sarasa Gothic（皆 SIL OFL 1.1）、
-Markdown 解析 markdown-it（MIT）。
+Markdown 解析 markdown-it（MIT）、EPUB 讀取 ZIPFoundation（MIT）。

@@ -17,9 +17,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>2026.10.13</string>
+	<string>2026.10.15</string>
 	<key>CFBundleVersion</key>
-	<string>2026.10.13</string>
+	<string>2026.10.15</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleDevelopmentRegion</key>
@@ -36,7 +36,7 @@
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>NSHumanReadableCopyright</key>
-	<string>字型：LXGW WenKai TC（SIL OFL 1.1）。Markdown 解析：markdown-it（MIT）。</string>
+	<string>字型：LXGW WenKai TC（SIL OFL 1.1）。Markdown 解析：markdown-it（MIT）。EPUB 讀取：ZIPFoundation（MIT）。</string>
 
 	<!-- 匯入 Daring Fireball 的 markdown UTI，讓 LaunchServices 認得它。 -->
 	<key>UTImportedTypeDeclarations</key>
