@@ -299,7 +299,11 @@ MB.revealPendingSync = function () {
   if (!pendingSync) return;
   const p = pendingSync;
   pendingSync = null;
-  setTimeout(() => { flash(p.el); if (p.toast) MB.toast(p.toast); }, 50);
+  setTimeout(() => {
+    if (p.run) { p.run(); return; }
+    flash(p.el);
+    if (p.toast) MB.toast(p.toast);
+  }, 50);
 };
 
 const toastEl = document.createElement('div');
@@ -500,6 +504,7 @@ MB.internal = {
   normHeading,
   bestHeading,
   landSync,
+  setPendingSync(run) { pendingSync = { run }; },
   settleOn,
   afterLayout,
   reveal,

@@ -480,6 +480,21 @@ mark.mb-hl .mb-b { color: var(--hl-accent); }
 }
 .mb-sync-flash { animation: mb-sync-flash 1.1s ease-in-out; border-radius: 3px; }
 
+/* 依關鍵詞對到內文時，只閃那幾個字（蓋一層，不動 DOM） */
+@keyframes mb-kw-flash {
+  0% { opacity: 0; }
+  15%, 65% { opacity: 1; }
+  100% { opacity: 0; }
+}
+.mb-kw-flash {
+  position: fixed;
+  z-index: 7;
+  pointer-events: none;
+  border-radius: 3px;
+  background: rgba(221, 152, 83, 0.38);
+  animation: mb-kw-flash 1.5s ease-in-out forwards;
+}
+
 #mb-toast {
   position: fixed;
   left: 50%;

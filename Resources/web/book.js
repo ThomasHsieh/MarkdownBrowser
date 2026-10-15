@@ -446,9 +446,98 @@
     if (!ranges.length) return;
     const candidates = ranges.flatMap(headingsIn);
     const hit = req.text ? I().bestHeading(candidates, req.text) : null;
+    // 標題對不到：拿心得標題的關鍵詞去這一章的內文找（docs/SPEC.md 13.6）。
+    // 點的是章名（quiet）就不找，章首正是要去的地方
+    if (!hit && req.text && !req.quiet) {
+      const k = keywordHit(ranges, req.text);
+      if (k) { landKeyword(k, req); return; }
+    }
     const fallback = headingsIn(ranges[0])[0] || ranges[0].start;
     I().landSync(hit || fallback, req, !!hit, '找不到對應小節，已跳到章首');
   };
+
+  /* ── 關鍵詞找內文（docs/SPEC.md 13.6）────────────────────
+   * 關鍵詞是心得標題與這一章內文的最長重疊字串，至少 3 個字，頭尾是虛詞的不算 ——
+   * 「的結果」「同一個」這類只是虛詞組合，照著跳會落在不相干的段落。
+   * 出現好幾次就用第一次：書第一次提到一個人名或故事，幾乎都是那段的開頭。 */
+  const FUNCTION_CHARS = new Set('的了與是在和就也而或及之把被讓不個成'.split(''));
+
+  /* 這幾章的內文：文字節點依序接起來、拿掉空白，另外記住每個字在哪個節點的第幾個位置 */
+  function chapterText(ranges) {
+    let text = '';
+    const where = [];
+    for (const range of ranges) {
+      const w = document.createTreeWalker(content, NodeFilter.SHOW_TEXT);
+      w.currentNode = range.start;
+      let n = range.start.nodeType === 3 ? range.start : w.nextNode();
+      for (; n; n = w.nextNode()) {
+        if (range.end && (n === range.end || range.end.contains(n) ||
+            (range.end.compareDocumentPosition(n) & Node.DOCUMENT_POSITION_FOLLOWING))) break;
+        if (n.parentElement.closest('.mb-fn, .mb-hidden, script, style')) continue;
+        const d = n.data;
+        for (let i = 0; i < d.length; i++) {
+          if (/\s/.test(d[i])) continue;
+          text += d[i];
+          where.push([n, i]);
+        }
+      }
+    }
+    return { text, where };
+  }
+
+  function keywordHit(ranges, heading) {
+    const h = I().normHeading(heading);
+    if (h.length < 3) return null;
+    const { text, where } = chapterText(ranges);
+    if (!text) return null;
+    let best = '';
+    for (let i = 0; i < h.length; i++) {
+      if (FUNCTION_CHARS.has(h[i])) continue;
+      for (let j = h.length; j - i >= Math.max(3, best.length + 1); j--) {
+        if (FUNCTION_CHARS.has(h[j - 1])) continue;
+        const sub = h.slice(i, j);
+        if (text.includes(sub)) { best = sub; break; }
+      }
+    }
+    if (best.length < 3) return null;
+    const at = text.indexOf(best);
+    const [sn, so] = where[at];
+    const [en, eo] = where[at + best.length - 1];
+    const range = document.createRange();
+    range.setStart(sn, so);
+    range.setEnd(en, eo + 1);
+    return { word: best, range };
+  }
+
+  /* 捲（翻）到關鍵詞那裡，只閃那幾個字，並提示這是依關鍵詞推測的 */
+  function landKeyword(k, req) {
+    const rect = k.range.getClientRects()[0] || k.range.getBoundingClientRect();
+    const background = !!req.background;
+    if (BK.paged) {
+      goView(viewOfX(rect.left), !background);
+    } else {
+      window.scrollTo({ top: Math.max(0, window.scrollY + rect.top - 80), behavior: background ? 'auto' : 'smooth' });
+    }
+    const show = () => { flashRange(k.range); MB.toast(`依關鍵詞「${k.word}」對到內文`); };
+    if (background) I().setPendingSync(show);
+    else setTimeout(show, BK.paged ? 280 : 500);
+  }
+
+  /* 不動 DOM：在那幾個字的位置上蓋一層會淡出的底色。包一層 span 的話，標記的文字位置
+   * 不變，但重畫標記時會被拆掉、殘留的 span 也會跟搜尋命中互相干擾 */
+  function flashRange(range) {
+    for (const q of range.getClientRects()) {
+      if (q.width < 1) continue;
+      const d = document.createElement('div');
+      d.className = 'mb-kw-flash';
+      d.style.left = q.left - 2 + 'px';
+      d.style.top = q.top - 1 + 'px';
+      d.style.width = q.width + 4 + 'px';
+      d.style.height = q.height + 2 + 'px';
+      document.body.appendChild(d);
+      setTimeout(() => d.remove(), 1600);
+    }
+  }
 
   MB.scrollToChapter = function (index) {
     BK.navigatedAt = Date.now();
