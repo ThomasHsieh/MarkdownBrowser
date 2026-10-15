@@ -319,6 +319,9 @@
           size: parseFloat(c.fontSize) || 16,
           display: c.display,
           valign: c.verticalAlign,
+          // 四邊都有框線：書用方框圈起來的小標、重點（《書 E》的「【第一類】…」）
+          boxed: ['Top', 'Right', 'Bottom', 'Left'].every((side) =>
+            !/^(none|hidden)$/.test(c[`border${side}Style`]) && parseFloat(c[`border${side}Width`]) > 0),
         };
         cache.set(el, cs);
       }
@@ -326,6 +329,7 @@
     };
 
     const flags = [];
+    const boxes = new Set();
     for (const el of fdoc.body.querySelectorAll('section.mb-chapter *')) {
       const tag = el.localName;
       if (tag === 'svg' || el.closest('svg')) continue;
@@ -339,6 +343,13 @@
       // 我們的粗體是顏色，顏色會往下繼承，不標的話整個清單項目都變橘色
       if (!inHeading && me.weight < 600 && parent.weight >= 600) cls.push('mb-nb');
       if (me.italic && !parent.italic && tag !== 'i' && tag !== 'em') cls.push('mb-i');
+      // 框線的顏色、粗細、圓角都不照書（書是淺灰底白紙配的），只留「這裡有個框」
+      // 框裡又有框（書的外框套內框）只畫外面那個
+      if (me.boxed && /^(block|flow-root|flex|grid)$/.test(me.display) && !/^(hr|img|table|td|th)$/.test(tag)) {
+        let inner = false;
+        for (let p = el.parentElement; p && !inner; p = p.parentElement) inner = boxes.has(p);
+        if (!inner) { cls.push('mb-box'); boxes.add(el); }
+      }
       if (BLOCK.test(me.display)) {
         if (me.align !== parent.align || el.parentElement.localName === 'section') {
           if (me.align === 'center') cls.push('mb-center');

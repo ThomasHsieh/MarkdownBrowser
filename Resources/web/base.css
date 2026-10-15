@@ -403,6 +403,7 @@ mark.mb-hl .mb-b { color: var(--hl-accent); }
 .mb-book .mb-left { text-align: start; }
 .mb-book p.mb-indent { text-indent: 2em; }
 .mb-book .mb-small { font-size: 0.86em; }
+.mb-book .mb-box { border: 1px solid var(--rule); padding: 0.5em 0.9em; margin: 1em 0; text-indent: 0; }
 .mb-book .mb-sup { vertical-align: super; font-size: 0.75em; }
 .mb-book .mb-hidden,
 .mb-book .mb-fn { display: none; }
