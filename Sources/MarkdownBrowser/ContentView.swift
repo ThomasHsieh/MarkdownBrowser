@@ -185,6 +185,7 @@ struct Sidebar: View {
                     state.bridge?.scrollToHeading(item.id)
                     state.syncBook(fromNoteHeading: item.id)
                 }
+                .modifier(LinkCursor(active: state.isComparing))
         }
     }
 
@@ -305,6 +306,22 @@ struct Sidebar: View {
                 pane.bridge?.deleteHighlight(item.id)
             }
             .disabled(pane.highlightsReadOnly != nil)
+        }
+    }
+}
+
+/// 點了會帶動另一欄的列，游標變手指（docs/SPEC.md 13.6），跟內文的標題、引文一致。
+/// 不用 pointerStyle：側欄的 List 底下是 NSTableView，它會自己把游標設回箭頭，pointerStyle
+/// 實測沒作用。所以滑鼠每動一下就設一次；push／pop 也不用，列在游標底下消失時會卡住手指
+struct LinkCursor: ViewModifier {
+    let active: Bool
+
+    func body(content: Content) -> some View {
+        content.onContinuousHover { phase in
+            switch phase {
+            case .active: if active { NSCursor.pointingHand.set() }
+            case .ended: NSCursor.arrow.set()
+            }
         }
     }
 }

@@ -137,9 +137,9 @@ MB.setAppearance = function (mode) {
   document.documentElement.setAttribute('data-appearance', mode);
 };
 
-/* 對照中（只有心得那欄會收到）：引文可以點，游標變手指提示 */
-MB.setComparing = function (on) {
-  document.documentElement.toggleAttribute('data-comparing', !!on);
+/* 點了會帶動另一欄（對照中）：標題與心得的引文游標變手指，讓人知道可以點 */
+MB.setLinked = function (on) {
+  document.documentElement.toggleAttribute('data-linked', !!on);
 };
 
 MB.setFontFamily = function (name) {

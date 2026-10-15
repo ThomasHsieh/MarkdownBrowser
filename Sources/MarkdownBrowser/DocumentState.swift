@@ -175,19 +175,32 @@ final class DocumentState: PaneDocument {
         }
         // 對照開關沒有單一的寫入點（兩欄各自開檔、關檔都會改變它），所以盯著變化事件；
         // objectWillChange 在改之前發，等下一輪才讀得到新值
-        compareObserver = objectWillChange.sink { [weak self] _ in
-            DispatchQueue.main.async { self?.pushComparing() }
+        linkObserver = objectWillChange.sink { [weak self] _ in
+            DispatchQueue.main.async { self?.pushLinked() }
         }
     }
 
-    private var compareObserver: AnyCancellable?
-    private var sentComparing: Bool?
+    private var linkObserver: AnyCancellable?
+    private var sentLinked: [ObjectIdentifier: Bool] = [:]
 
-    /// 心得那欄要知道是不是在對照：對照時引文可以點（游標變手指，docs/SPEC.md 13.6）
-    private func pushComparing() {
-        guard let bridge, bridge.isReady, sentComparing != isComparing else { return }
-        sentComparing = isComparing
-        bridge.setComparing(isComparing)
+    /// 兩欄各自要知道「點了會不會帶動另一欄」：會的話標題與引文的游標變手指（docs/SPEC.md 13.6）
+    private func pushLinked() {
+        // 心得那欄：對照中才帶得動書
+        send(isComparing, to: self)
+        // 書那欄：對照中，或只開書但對照開關開著（點標題會帶出那章的心得）
+        send(isComparing || (documentURL == nil && compareEnabled && book.documentURL != nil), to: book)
+    }
+
+    private func send(_ on: Bool, to pane: PaneDocument) {
+        guard let bridge = pane.bridge, bridge.isReady, sentLinked[ObjectIdentifier(pane)] != on else { return }
+        sentLinked[ObjectIdentifier(pane)] = on
+        bridge.setLinked(on)
+    }
+
+    /// 某一欄的網頁端（重新）載入完成：之前送的狀態不算數
+    func paneDidLoad(_ pane: PaneDocument) {
+        sentLinked[ObjectIdentifier(pane)] = nil
+        pushLinked()
     }
 
     // MARK: - 視窗
@@ -264,8 +277,6 @@ final class DocumentState: PaneDocument {
 
     override func pushInitialState() {
         if let url = documentURL { bridge?.setDocumentDirectory(url.deletingLastPathComponent()) }
-        sentComparing = nil      // 網頁端重新載入過，之前送的狀態不算數
-        pushComparing()
         super.pushInitialState()
     }
 
@@ -684,7 +695,7 @@ protocol WebBridge: AnyObject {
     func scrollToChapter(_ index: Int)
     func setBookLayout(_ mode: String)
     func syncTo(_ request: [String: Any])
-    func setComparing(_ on: Bool)
+    func setLinked(_ on: Bool)
     func revealPendingSync()
     func toast(_ text: String)
 }

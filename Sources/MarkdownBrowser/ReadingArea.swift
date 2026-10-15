@@ -268,6 +268,8 @@ struct BookContents: View {
                     case .heading(let h): book.selectHeading(h)
                     }
                 }
+                // 只開書時，對照開關開著才會帶出心得
+                .modifier(LinkCursor(active: state.compareEnabled))
         }
     }
 }

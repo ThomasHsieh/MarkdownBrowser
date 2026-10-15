@@ -119,8 +119,10 @@ blockquote {
   font-style: italic;
 }
 blockquote > :last-child { margin-bottom: 0; }
-/* 對照中點引文會把書翻到原句（docs/SPEC.md 13.6） */
-:root[data-comparing] #content blockquote { cursor: pointer; }
+/* 對照中點標題、點心得的引文會帶動另一欄（docs/SPEC.md 13.6）。書裡的 blockquote 是書的內容，
+   點了不會怎樣，所以引文只算心得那欄的 */
+:root[data-linked] #content :is(h1, h2, h3, h4),
+:root[data-linked] #content:not(.mb-book) blockquote { cursor: pointer; }
 
 ul, ol { margin: 0 0 1.1em; padding-left: 1.6em; }
 li { margin: 0.35em 0; }

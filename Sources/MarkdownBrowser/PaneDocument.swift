@@ -157,6 +157,7 @@ class PaneDocument: ObservableObject, Identifiable {
         bridge.setUserTheme(UserAssets.userThemeCSS())
         bridge.setUserFonts(UserAssets.userFontCSS())
         render(keepScroll: false)
+        window.paneDidLoad(self)
     }
 
     func setOutline(_ items: [OutlineItem]) { outline = items }
