@@ -155,15 +155,21 @@ final class EpubBook {
 
     // MARK: - 書名配對
 
-    /// 短書名：切掉第一個「：」「:」「_」之後的部分，也去掉結尾的括號註記（「（修訂版）」）。
-    /// 心得 h1 的書名時有時無副標，取短書名才對得起來（docs/SPEC.md 13.2）。
+    /// 短書名：切掉第一個「：」「:」「_」之後的部分、去掉結尾的括號註記（「（修訂版）」
+    /// 「(作者) (來源)」可能連續好幾組），再切掉「 - 作者」「 = 英文書名」。
+    /// 心得 h1 的書名時有時無副標，檔名又常帶作者與來源，取短書名才對得起來。
+    /// `dc:title`、檔名、心得書名、資料夾名稱共用這一套（docs/SPEC.md 13.2）。
     static func shortTitle(_ title: String) -> String {
         var s = title.trimmingCharacters(in: .whitespacesAndNewlines)
         if let cut = s.firstIndex(where: { $0 == "：" || $0 == ":" || $0 == "_" }) {
             s = String(s[..<cut])
         }
-        if let paren = s.range(of: #"[（(][^（()）]*[）)]\s*$"#, options: .regularExpression) {
+        while let paren = s.range(of: #"[（(][^（()）]*[）)]\s*$"#, options: .regularExpression), paren.lowerBound > s.startIndex {
             s.removeSubrange(paren)
+        }
+        // 只認兩側有空白的，「E-Book」「Spider-Man」不切
+        if let cut = s.range(of: #"\s+[-=]\s+"#, options: .regularExpression), cut.lowerBound > s.startIndex {
+            s = String(s[..<cut.lowerBound])
         }
         return s.trimmingCharacters(in: .whitespacesAndNewlines)
     }

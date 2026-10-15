@@ -41,7 +41,8 @@ struct ContentView: View {
             } label: {
                 Label("對照書籍", systemImage: state.isComparing ? "book.fill" : "book")
             }
-            .help(state.canCompare || state.isComparing ? "左書右心得對照　⇧⌘B" : "找不到對應的書或心得")
+            .help(state.needsPairingPrompt ? "沒有自動配對到書，按下去挑選或看原因　⇧⌘B"
+                  : state.canCompare || state.isComparing ? "左書右心得對照　⇧⌘B" : "找不到對應的心得")
             .disabled(!(state.canCompare || state.isComparing))
         }
 

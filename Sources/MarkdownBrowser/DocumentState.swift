@@ -304,12 +304,16 @@ final class DocumentState: PaneDocument {
 
     // MARK: - 配對與對照開關
 
-    /// 能不能按「對照書籍」：心得配對到書，或書配對到心得。
+    /// 能不能按「對照書籍」：有心得就能按（沒配對到書時按下去說明原因或讓人挑，
+    /// docs/SPEC.md 13.2），只開了書則要書配對到心得。
     var canCompare: Bool {
-        if documentURL != nil { return pairedBookURL != nil }
+        if documentURL != nil { return true }
         if book.documentURL != nil { return pairedNoteLocation != nil }
         return false
     }
+
+    /// 按「對照書籍」不會直接打開書，而是先問使用者（挑候選或說明找不到）。
+    var needsPairingPrompt: Bool { documentURL != nil && pairedBookURL == nil && !isComparing }
 
     /// 兩欄都在顯示。
     var isComparing: Bool { documentURL != nil && book.documentURL != nil }
@@ -317,7 +321,7 @@ final class DocumentState: PaneDocument {
     /// 心得換了之後重新決定左邊那本書。開關關著時不自動開，但仍算出配對結果給按鈕用。
     private func refreshPairing() {
         guard let note = documentURL else { return }
-        pairedBookURL = BookPairing.book(forNote: note)
+        pairedBookURL = BookPairing.match(forNote: note).book
         if compareEnabled, let paired = pairedBookURL {
             let opening = book.documentURL?.path != paired.path
             let saved = AppSettings.shared.bookPosition(for: paired)?["chapter"] as? Int
@@ -427,6 +431,7 @@ final class DocumentState: PaneDocument {
     }
 
     func toggleCompare() {
+        if needsPairingPrompt { resolvePairing(); return }
         guard canCompare || isComparing else { return }
         compareEnabled.toggle()
         if compareEnabled {
@@ -473,6 +478,76 @@ final class DocumentState: PaneDocument {
         settings.setBookPair(folder: note.deletingLastPathComponent(), book: url)
         compareEnabled = true
         refreshPairing()
+    }
+
+    /// 沒有自動配對到書：有候選就讓使用者挑，找不到就說明找過哪裡。
+    /// 開心得時不跳，等使用者按「對照書籍」才問 —— 只想看心得時不該被打斷。
+    private func resolvePairing() {
+        guard let note = documentURL else { return }
+        switch BookPairing.match(forNote: note) {
+        case .found:
+            compareEnabled = true
+            refreshPairing()
+        case .candidates(let books, let title, let prefix):
+            pickBook(from: books, title: title, prefix: prefix, for: note)
+        case .notFound(let title, let searched):
+            explainNoBook(title: title, searched: searched)
+        }
+    }
+
+    private func pickBook(from books: [URL], title: String, prefix: Bool, for note: URL) {
+        let alert = NSAlert()
+        // 比對用的是短書名，標題寫完整書名會讓人以為副標也比對過
+        let short = EpubBook.shortTitle(title)
+        alert.messageText = prefix ? "沒有書名完全是《\(short)》的書" : "《\(short)》有 \(books.count) 本"
+        alert.informativeText = prefix
+            ? "以下是書名開頭相符的書。選一本對照，之後這個資料夾的心得都用這本。"
+            : "選一本對照，之後這個資料夾的心得都用這本。"
+        let popup = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 520, height: 26), pullsDown: false)
+        for book in books {
+            popup.addItem(withTitle: book.deletingPathExtension().lastPathComponent)
+            popup.lastItem?.toolTip = (book.path as NSString).abbreviatingWithTildeInPath
+        }
+        alert.accessoryView = popup
+        alert.addButton(withTitle: "對照")
+        alert.addButton(withTitle: "取消")
+        alert.addButton(withTitle: "指定其他書…")
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            settings.setBookPair(folder: note.deletingLastPathComponent(), book: books[popup.indexOfSelectedItem])
+            compareEnabled = true
+            refreshPairing()
+        case .alertThirdButtonReturn:
+            chooseBookManually()
+        default:
+            break
+        }
+    }
+
+    private func explainNoBook(title: String?, searched: [URL]) {
+        let alert = NSAlert()
+        if let title {
+            alert.messageText = "找不到《\(title)》"
+            let places = searched.isEmpty
+                ? "心得往上四層都沒有含 EPUB 的資料夾，也還沒有加入書庫資料夾。"
+                : "找過：\n" + searched.map { "• " + ($0.path as NSString).abbreviatingWithTildeInPath }.joined(separator: "\n")
+            alert.informativeText = "比對的書名是「\(EpubBook.shortTitle(title))」。\n\n" + places
+        } else {
+            alert.messageText = "這份心得取不到書名"
+            alert.informativeText = "書名取自心得第一個 # 標題裡的《》，沒有《》就取整個標題。"
+        }
+        alert.addButton(withTitle: "指定對應書籍…")
+        alert.addButton(withTitle: "加入書庫資料夾…")
+        alert.addButton(withTitle: "取消")
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            chooseBookManually()
+        case .alertSecondButtonReturn:
+            // 加入之後立刻重新比對；還是找不到就再說明一次，使用者自己按取消
+            if LibraryFoldersPanel.chooseFolder() != nil { resolvePairing() }
+        default:
+            break
+        }
     }
 
     var hasManualPair: Bool {

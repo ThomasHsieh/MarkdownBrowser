@@ -61,6 +61,7 @@ struct MarkdownBrowserApp: App {
                 .disabled(router.active?.documentURL == nil)
             Button("清除指定") { router.active?.clearManualPair() }
                 .disabled(!(router.active?.hasManualPair ?? false))
+            Button("書庫資料夾…") { LibraryFoldersPanel.show() }
         }
 
         CommandGroup(replacing: .printItem) {
@@ -127,7 +128,8 @@ struct MarkdownBrowserApp: App {
                 ForEach(BookLayout.allCases, id: \.self) { Text($0.name).tag($0) }
             }
 
-            Button(router.active?.isComparing == true ? "關閉對照書籍" : "對照書籍") { router.active?.toggleCompare() }
+            Button(router.active?.isComparing == true ? "關閉對照書籍"
+                   : router.active?.needsPairingPrompt == true ? "對照書籍…" : "對照書籍") { router.active?.toggleCompare() }
                 .keyboardShortcut("b", modifiers: [.command, .shift])
                 .disabled(!((router.active?.canCompare ?? false) || (router.active?.isComparing ?? false)))
         }

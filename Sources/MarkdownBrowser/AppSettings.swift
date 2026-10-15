@@ -57,6 +57,15 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(bookPairs, forKey: Keys.bookPairs) }
     }
 
+    /// 從額外書庫自動配到的組合：心得資料夾路徑 → EPUB 路徑。只用來反查（從書找心得），
+    /// 跟手動指定分開存：「清除指定」不該清掉它，也要分得出哪些是使用者親手指定的。
+    private(set) var autoBookPairs: [String: String] {
+        didSet { defaults.set(autoBookPairs, forKey: Keys.autoBookPairs) }
+    }
+
+    /// 額外書庫：往上找不到書時依序找的資料夾（docs/SPEC.md 13.2）。
+    @Published private(set) var libraryFolders: [URL] = []
+
     /// 每個資料夾上次讀的心得。從 Finder 單獨開書、反向配對到心得時，開的就是這一份。
     private(set) var lastNoteByFolder: [String: String] {
         didSet { defaults.set(lastNoteByFolder, forKey: Keys.lastNoteByFolder) }
@@ -109,6 +118,8 @@ final class AppSettings: ObservableObject {
         static let splitRatio = "splitRatio"
         static let bookLayout = "bookLayout"
         static let bookPairs = "bookPairs"
+        static let autoBookPairs = "autoBookPairs"
+        static let libraryFolders = "libraryFolders"
         static let lastNoteByFolder = "lastNoteByFolder"
         static let bookPositions = "bookPositions"
     }
@@ -124,6 +135,8 @@ final class AppSettings: ObservableObject {
         splitRatio = defaults.object(forKey: Keys.splitRatio) as? Double ?? 0.5
         bookLayout = BookLayout(rawValue: defaults.string(forKey: Keys.bookLayout) ?? "") ?? .single
         bookPairs = defaults.dictionary(forKey: Keys.bookPairs) as? [String: String] ?? [:]
+        autoBookPairs = defaults.dictionary(forKey: Keys.autoBookPairs) as? [String: String] ?? [:]
+        libraryFolders = (defaults.stringArray(forKey: Keys.libraryFolders) ?? []).map { URL(fileURLWithPath: $0) }
         lastNoteByFolder = defaults.dictionary(forKey: Keys.lastNoteByFolder) as? [String: String] ?? [:]
         bookPositions = defaults.dictionary(forKey: Keys.bookPositions) as? [String: [String: Any]] ?? [:]
 
@@ -168,6 +181,31 @@ final class AppSettings: ObservableObject {
 
     func setBookPair(folder: URL, book: URL?) {
         bookPairs[folder.path] = book?.standardizedFileURL.path
+    }
+
+    func setAutoBookPair(folder: URL, book: URL) {
+        let path = book.standardizedFileURL.path
+        if autoBookPairs[folder.path] != path { autoBookPairs[folder.path] = path }
+    }
+
+    /// 反查用的自動配對紀錄。書或心得資料夾不在了（搬家、改名）就順手清掉。
+    func liveAutoBookPairs() -> [String: String] {
+        let fm = FileManager.default
+        let live = autoBookPairs.filter { fm.fileExists(atPath: $0.key) && fm.fileExists(atPath: $0.value) }
+        if live.count != autoBookPairs.count { autoBookPairs = live }
+        return live
+    }
+
+    func addLibraryFolder(_ folder: URL) {
+        let url = folder.standardizedFileURL
+        guard !libraryFolders.contains(where: { $0.path == url.path }) else { return }
+        libraryFolders.append(url)
+        defaults.set(libraryFolders.map(\.path), forKey: Keys.libraryFolders)
+    }
+
+    func removeLibraryFolder(_ folder: URL) {
+        libraryFolders.removeAll { $0.path == folder.path }
+        defaults.set(libraryFolders.map(\.path), forKey: Keys.libraryFolders)
     }
 
     func bookPosition(for book: URL) -> [String: Any]? { bookPositions[book.path] }
