@@ -232,6 +232,7 @@ struct WebPane: NSViewRepresentable {
         func syncTo(_ request: [String: Any]) { eval("MB.syncTo(\(json(request)))") }
         func revealPendingSync() { eval("MB.revealPendingSync()") }
         func toast(_ text: String) { eval("MB.toast(\(literal(text)))") }
+        func setComparing(_ on: Bool) { eval("MB.setComparing(\(on))") }
 
         func printDocument() {
             guard let webView else { return }

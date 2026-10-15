@@ -945,6 +945,7 @@ tab 模式下看得到的只有一邊，點標題的意圖通常是在這邊導�
    對不到章。連全書也沒有就提示「書裡找不到這段引文」
 4. 引文一段裡有好幾行（`>` 連續幾行不空行，檔頭的章名與作者就是）時，只找點到的那一行
 5. 完整對到不提示。拖選文字、點標記、點連結不觸發；tab 模式照樣在背景翻好、切過去才閃
+6. 對照中滑到引文上游標變成手指，讓人知道可以點；沒在對照時維持一般游標
 
 固定版面沒有文字，退回翻到那一章。拿《書 E》序到第 4 章 47 行引文試算：完整
 對到 44 行，沒對到的 3 行是自己加註的副書名與公式。
@@ -1011,6 +1012,7 @@ OPF 宣告 `rendition:layout` 為 `pre-paginated` 的書。現有 14 本全部�
 | Swift → JS | `MB.syncTo(request)` | 被帶動的一邊捲到對應位置並閃底色；對不到小節由網頁端自己提示。心得那欄的 `request` 帶 `scope`（單檔心得那一章的標題）與 `text`，書那欄帶 `chapters` 與 `text`（點引文時改帶 `quote`）；`background` 為真是 tab 模式下看不到的那欄 |
 | Swift → JS | `MB.scrollToChapter(index)` | 書的下拉選單選了某一章 |
 | Swift → JS | `MB.revealPendingSync()` | 切到背景捲好的那個 tab 時，才閃目標標題 |
+| Swift → JS | `MB.setComparing(on)` | 只送心得那欄：是否在對照，決定引文要不要顯示成可點 |
 | Swift → JS | `MB.toast(text)` | 「這一章還沒有心得」之類的短暫提示 |
 | JS → Swift | `headingClicked` | 內文標題被點，Swift 轉給另一欄；書那欄另帶所在章與「是不是章名」 |
 | JS → Swift | `quoteClicked` | 心得引文裡的一段被點，帶文字與所在小節的標題 id，Swift 算出章再叫書那欄找原句 |

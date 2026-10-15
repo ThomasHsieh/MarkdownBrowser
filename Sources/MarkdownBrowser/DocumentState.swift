@@ -173,6 +173,21 @@ final class DocumentState: PaneDocument {
         bookObserver = book.objectWillChange.sink { [weak self] _ in
             MainActor.assumeIsolated { self?.objectWillChange.send() }
         }
+        // 對照開關沒有單一的寫入點（兩欄各自開檔、關檔都會改變它），所以盯著變化事件；
+        // objectWillChange 在改之前發，等下一輪才讀得到新值
+        compareObserver = objectWillChange.sink { [weak self] _ in
+            DispatchQueue.main.async { self?.pushComparing() }
+        }
+    }
+
+    private var compareObserver: AnyCancellable?
+    private var sentComparing: Bool?
+
+    /// 心得那欄要知道是不是在對照：對照時引文可以點（游標變手指，docs/SPEC.md 13.6）
+    private func pushComparing() {
+        guard let bridge, bridge.isReady, sentComparing != isComparing else { return }
+        sentComparing = isComparing
+        bridge.setComparing(isComparing)
     }
 
     // MARK: - 視窗
@@ -249,6 +264,8 @@ final class DocumentState: PaneDocument {
 
     override func pushInitialState() {
         if let url = documentURL { bridge?.setDocumentDirectory(url.deletingLastPathComponent()) }
+        sentComparing = nil      // 網頁端重新載入過，之前送的狀態不算數
+        pushComparing()
         super.pushInitialState()
     }
 
@@ -667,6 +684,7 @@ protocol WebBridge: AnyObject {
     func scrollToChapter(_ index: Int)
     func setBookLayout(_ mode: String)
     func syncTo(_ request: [String: Any])
+    func setComparing(_ on: Bool)
     func revealPendingSync()
     func toast(_ text: String)
 }

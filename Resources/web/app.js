@@ -137,6 +137,11 @@ MB.setAppearance = function (mode) {
   document.documentElement.setAttribute('data-appearance', mode);
 };
 
+/* 對照中（只有心得那欄會收到）：引文可以點，游標變手指提示 */
+MB.setComparing = function (on) {
+  document.documentElement.toggleAttribute('data-comparing', !!on);
+};
+
 MB.setFontFamily = function (name) {
   document.documentElement.setAttribute('data-font', name);
 };

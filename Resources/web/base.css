@@ -119,6 +119,8 @@ blockquote {
   font-style: italic;
 }
 blockquote > :last-child { margin-bottom: 0; }
+/* 對照中點引文會把書翻到原句（docs/SPEC.md 13.6） */
+:root[data-comparing] #content blockquote { cursor: pointer; }
 
 ul, ol { margin: 0 0 1.1em; padding-left: 1.6em; }
 li { margin: 0.35em 0; }
