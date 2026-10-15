@@ -51,10 +51,10 @@
  */
 :root[data-appearance="light"] {
   --bg: #faf8f3;
-  --fg: #3a3a3a;
+  --fg: #1e1e1e;              /* 15.7:1。#3A3A3A 在紙上偏灰，比照電子書閱讀器壓到接近黑 */
   --accent: #a2541a;          /* 5.2:1 —— 與深色模式同色相，壓深到通過 AA */
   --muted: #7a7368;
-  --rule: #3a3a3a;            /* 框線＝內文色，與深色模式的邏輯一致 */
+  --rule: #3a3a3a;            /* 框線比內文淡一階：跟字一樣黑的話表格線會搶走文字 */
   --quote-bar: #b9b2a5;
   --link: #1d5fa8;
   --code-bg: #f0ece3;
@@ -94,7 +94,7 @@ body {
   font-family: var(--font-body);
   font-size: var(--font-size);
   line-height: var(--line-height);
-  -webkit-font-smoothing: antialiased;
+  -webkit-font-smoothing: antialiased;   /* 深色底：關掉筆畫加粗，淺字才不會糊 */
   /* 絕不合成假粗體。粗體的訊號完全交給顏色。 */
   font-synthesis-weight: none;
   -webkit-font-synthesis: none;
@@ -102,6 +102,9 @@ body {
   overflow-wrap: break-word;
   font-variant-numeric: tabular-nums;   /* 數字等寬，金額上下對齊 */
 }
+/* 淺色底反過來：antialiased 會關掉 macOS 的筆畫加粗，深字在紙上變得又細又淡，
+   楷體尤其明顯。交回系統預設，筆畫跟電子書閱讀器一樣扎實 */
+:root[data-appearance="light"] body { -webkit-font-smoothing: auto; }
 
 #content {
   /* 行寬隨視窗滿版，只留固定左右內距。 */
