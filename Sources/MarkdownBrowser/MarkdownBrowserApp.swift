@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import WebKit
 
 @main
 struct MarkdownBrowserApp: App {
@@ -290,6 +291,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     active.selectedTab = active.selectedTab == .book ? .note : .book
                     return nil
                 }
+            }
+
+            // Tab：對照時切到另一欄（docs/SPEC.md 13.3）。鍵盤焦點在網頁上時交給網頁端，
+            // 正在打字只有那邊知道；焦點在側欄之類的地方時網頁收不到，這裡直接切
+            if event.keyCode == 48, flags.isDisjoint(with: [.command, .control, .option]) {
+                let handled = MainActor.assumeIsolated { () -> Bool in
+                    guard let active = WindowRouter.shared.active, active.isComparing else { return false }
+                    let responder = event.window?.firstResponder
+                    if responder is WKWebView || responder is NSText { return false }
+                    active.switchFocusedPane()
+                    return true
+                }
+                if handled { return nil }
             }
 
             guard flags.contains(.command), !flags.contains(.control) else { return event }

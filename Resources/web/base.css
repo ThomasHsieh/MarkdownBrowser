@@ -10,6 +10,7 @@
   --accent: #dd9853;          /* 粗體用色，ghostty bold-color 的宣告值 */
   --muted: #8a8a8a;
   --rule: #cecece;            /* 框線＝內文色，跟終端機用 box-drawing 字元畫框一樣亮 */
+  --focus-frame: #555555;     /* 對照並排時的焦點欄外框：比 --rule 淡一階，看得出來但不搶 */
   --quote-bar: #757575;
   --link: #7aa6d6;
   --code-bg: #242424;
@@ -55,6 +56,7 @@
   --accent: #a2541a;          /* 5.2:1 —— 與深色模式同色相，壓深到通過 AA */
   --muted: #7a7368;
   --rule: #3a3a3a;            /* 框線比內文淡一階：跟字一樣黑的話表格線會搶走文字 */
+  --focus-frame: #a8a8a8;     /* 對底色 2.3:1，跟深色那組一樣明顯 */
   --quote-bar: #b9b2a5;
   --link: #1d5fa8;
   --code-bg: #f0ece3;
@@ -223,6 +225,21 @@ mark.mb-hit.mb-current {
   background: var(--accent);
   color: var(--bg);
 }
+
+/* 對照並排時的焦點欄外框（docs/SPEC.md 13.5）。上下鍵在捲動模式跟著焦點走，
+ * 搜尋、列印、標記也作用在焦點欄，所以要看得出是哪一欄 */
+#focus-frame {
+  display: none;
+  position: fixed;
+  inset: 0;
+  border: 1px solid var(--focus-frame);   /* 要低調：橘色留給粗體 */
+  pointer-events: none;
+  z-index: 40;
+}
+:root[data-focus-frame] #focus-frame { display: block; }
+/* 心得那欄的網頁頂到標題列底下，第一列像素被標題列的分隔線蓋住，上緣要讓開一列。
+ * 書那欄上面是章節列，沒有這個問題 */
+:root:not(.mb-book-mode) #focus-frame { top: 1px; }
 
 #find-bar {
   position: fixed;

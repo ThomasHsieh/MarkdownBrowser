@@ -185,20 +185,61 @@ final class DocumentState: PaneDocument {
         // 書那欄：對照中，或只開書但對照開關開著（點標題會帶出那章的心得）
         send(isComparing || (documentURL == nil && compareEnabled && book.documentURL != nil), to: book)
 
-        // 心得那欄的翻頁鍵歸書：兩欄並排才轉，tab 模式下書看不見（docs/SPEC.md 13.5）
-        let forward = isComparing && !isTabbed
-        if let bridge, bridge.isReady, sentForward != forward {
-            sentForward = forward
-            bridge.setForwardPageKeys(forward)
+        // 兩欄並排時按鍵綁目標不綁焦點：左右與空白翻書，其他捲心得。
+        // tab 模式下另一欄看不見，不轉（docs/SPEC.md 13.5）
+        let sideBySide = isComparing && !isTabbed
+        if let bridge, bridge.isReady, sentForward != sideBySide {
+            sentForward = sideBySide
+            bridge.setForwardPageKeys(sideBySide)
+        }
+        // 書那欄只在翻頁模式轉，那由網頁端判斷
+        if let b = book.bridge, b.isReady, sentForwardBook != sideBySide {
+            sentForwardBook = sideBySide
+            b.setForwardScrollKeys(sideBySide)
+        }
+
+        // Tab 切到另一欄：對照中才攔（並排切焦點、tab 模式切顯示哪一欄），
+        // 只開一欄時交給網頁在連結之間跳
+        for pane in panes {
+            guard let b = pane.bridge, b.isReady, sentPaneSwitch[ObjectIdentifier(pane)] != isComparing else { continue }
+            sentPaneSwitch[ObjectIdentifier(pane)] = isComparing
+            b.setPaneSwitch(isComparing)
+        }
+
+        // 焦點欄外框：並排時一律顯示，上下鍵、搜尋、列印、標記都看焦點
+        for pane in panes {
+            let on = sideBySide && (focusedPane == .book) == (pane === book)
+            guard let b = pane.bridge, b.isReady, sentFrame[ObjectIdentifier(pane)] != on else { continue }
+            sentFrame[ObjectIdentifier(pane)] = on
+            b.setFocusFrame(on)
         }
     }
 
     private var sentForward: Bool?
+    private var sentForwardBook: Bool?
+    private var sentFrame: [ObjectIdentifier: Bool] = [:]
+    private var sentPaneSwitch: [ObjectIdentifier: Bool] = [:]
+
+    /// Tab 切到另一欄：並排時切焦點，tab 模式切顯示哪一欄（跟 ⌃Tab 一樣）。
+    /// 只改 `focusedPane` 不夠：按鍵送到哪個 WKWebView 看的是 first responder，
+    /// 不交出去的話外框移到書，按 ↓ 收到的還是心得
+    func switchFocusedPane() {
+        guard isComparing else { return }
+        let next: PaneSide = focusedPane == .book ? .note : .book
+        if isTabbed { selectedTab = next } else { focusedPane = next }
+        pane(next).bridge?.takeFocus()
+    }
 
     /// 心得那欄轉過來的翻頁鍵。焦點留在心得，只把這一下交給書。
     func forwardPageKey(_ key: String, shift: Bool) {
         guard isComparing, !isTabbed else { return }
         book.bridge?.pageKey(key, shift: shift)
+    }
+
+    /// 書那欄（翻頁模式）轉過來的捲動鍵。焦點留在書，只把這一下交給心得。
+    func forwardScrollKey(_ key: String) {
+        guard isComparing, !isTabbed else { return }
+        bridge?.scrollKey(key)
     }
 
     private func send(_ on: Bool, to pane: PaneDocument) {
@@ -210,7 +251,9 @@ final class DocumentState: PaneDocument {
     /// 某一欄的網頁端（重新）載入完成：之前送的狀態不算數
     func paneDidLoad(_ pane: PaneDocument) {
         sentLinked[ObjectIdentifier(pane)] = nil
-        if pane === self { sentForward = nil }
+        sentFrame[ObjectIdentifier(pane)] = nil
+        sentPaneSwitch[ObjectIdentifier(pane)] = nil
+        if pane === self { sentForward = nil } else { sentForwardBook = nil }
         pushLinked()
     }
 
@@ -797,6 +840,11 @@ protocol WebBridge: AnyObject {
     func setLinked(_ on: Bool)
     func setForwardPageKeys(_ on: Bool)
     func pageKey(_ key: String, shift: Bool)
+    func setForwardScrollKeys(_ on: Bool)
+    func scrollKey(_ key: String)
+    func setFocusFrame(_ on: Bool)
+    func setPaneSwitch(_ on: Bool)
+    func takeFocus()
     func revealPendingSync()
     func toast(_ text: String)
 }

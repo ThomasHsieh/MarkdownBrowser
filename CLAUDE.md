@@ -57,9 +57,9 @@ Swift 端只做殼，**所有排版都在 CSS 裡**。切字體、切明暗只�
   並推給自己那個視窗的網頁端，沒有其他同步路徑
 - `WebBridge` protocol 是 Swift → JS 的唯一介面，由 `WebPane.Coordinator` 實作，
   一欄一份。兩欄之間不直接溝通，一律經過 Swift 轉送（章名對應、換檔、搬視窗都要 Swift）
-- JS → Swift 有十三種訊息：`ready`、`outline`、`activeHeading`、`openExternal`，
+- JS → Swift 有十五種訊息：`ready`、`outline`、`activeHeading`、`openExternal`，
   標記的 `highlights`、`saveHighlights`、`copy`、`bannerAction`，以及對照的
-  `headingClicked`、`quoteClicked`、`bookPosition`、`focus`、`pageKey`。需要回傳值的
+  `headingClicked`、`quoteClicked`、`bookPosition`、`focus`、`pageKey`、`scrollKey`、`switchPane`。需要回傳值的
   呼叫（`highlightSelection`、`commitNote`、`probeHighlights`）用 `evaluateJavaScript`
   的完成回呼拿，不另外設計訊息
 - **選單與按鍵監聽一律作用在 `WindowRouter.active` 上。** SwiftUI 的 focus 環境在
@@ -138,9 +138,15 @@ EPUB 的規格在 `docs/SPEC.md` 第 13 節。最容易被改壞的：
 - **新增選單項目**：`MarkdownBrowserApp.swift` 的 `menus`，動作對象是
   `router.active`（Picker 用 `activeBinding(_:fallback:)`）；工具列在
   `ContentView.swift` 的 `toolbarItems`，直接用自己視窗的 `state`。
-  `⌘N`、`⌘O`、`⌘3`／`⌘4`（字體）、`⇧⌘H`、`⇧⌘B`、`⌃Tab` 已被佔用；`⌘1`／`⌘2` 原本是主題，現在空著
+  `⌘N`、`⌘O`、`⌘3`／`⌘4`（字體）、`⇧⌘H`、`⇧⌘B`、`⌃Tab`（tab 模式切欄）、`Tab`（對照時切到另一欄）已被佔用；`⌘1`／`⌘2` 原本是主題，現在空著
 - **選單與按鍵作用在焦點欄**：搜尋、列印、標記走 `router.active?.focusedBridge`，
   不是 `bridge`（那只是心得那欄）
+- **對照並排時按鍵綁目標不綁焦點**（SPEC 13.5）：左右與空白翻書，其他捲心得；
+  書在捲動模式時上下鍵才跟著焦點。兩個方向各一條轉送（`pageKey`、`scrollKey`），
+  要不要轉由 `DocumentState.pushLinked` 推給兩欄，翻頁還是捲動模式由 `book.js` 自己判斷。
+  切焦點欄不能只改 `focusedPane`，還要把 first responder 交給那一欄的 WKWebView（`takeFocus`），
+  否則外框移過去了，按鍵還是送到原來那欄。`Tab` 有兩條路：鍵盤焦點在網頁上時由網頁端攔
+  （只有它知道是不是正在打字），不在網頁上（剛開檔時常在側欄）時由 `installKeyMonitor` 直接切
 
 ## 踩過的坑（改到附近時別踩回去）
 

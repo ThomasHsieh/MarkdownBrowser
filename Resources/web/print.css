@@ -41,7 +41,8 @@ body {
   padding: 0;
 }
 
-#find-bar {
+#find-bar,
+#focus-frame {
   display: none !important;
 }
 

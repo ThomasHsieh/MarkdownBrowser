@@ -138,6 +138,11 @@ MB.setLinked = function (on) {
   document.documentElement.toggleAttribute('data-linked', !!on);
 };
 
+/* 對照並排時，焦點欄框起來 */
+MB.setFocusFrame = function (on) {
+  document.documentElement.toggleAttribute('data-focus-frame', !!on);
+};
+
 MB.setFontFamily = function (name) {
   document.documentElement.setAttribute('data-font', name);
 };
@@ -580,5 +585,34 @@ document.addEventListener('keydown', (e) => {
   e.preventDefault();
   toSwift({ type: 'pageKey', key: k, shift: e.shiftKey });
 });
+
+/* 對照時 Tab／⇧Tab 切到另一欄（docs/SPEC.md 13.3）：並排時切焦點欄，tab 模式切顯示哪一欄。
+ * 只有兩欄，方向沒有差別。只開一欄時照舊交給瀏覽器（在連結之間跳）；正在打字時也不攔 */
+let paneSwitch = false;
+MB.setPaneSwitch = function (on) { paneSwitch = !!on; };
+document.addEventListener('keydown', (e) => {
+  if (!paneSwitch || e.key !== 'Tab' || e.isComposing || e.metaKey || e.ctrlKey || e.altKey) return;
+  const t = e.target;
+  if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable) return;
+  e.preventDefault();
+  toSwift({ type: 'switchPane' });
+});
+
+/* 反方向：書在翻頁模式時，書那欄的 ↑／↓／PageUp／PageDown／Home／End 轉過來捲心得
+ * （docs/SPEC.md 13.5）。按鍵不是在這一欄發生的，要自己記一筆使用者動過，
+ * 否則晚到的版面校正會把剛捲的位置拉回去。行為比照原生捲動 */
+MB.scrollKey = function (k) {
+  lastUserInput = Date.now();
+  const lineGap = parseFloat(getComputedStyle(document.body).lineHeight) || 32;
+  const page = Math.max(100, window.innerHeight - lineGap * 2);
+  switch (k) {
+    case 'ArrowDown': window.scrollBy({ top: 40, behavior: 'auto' }); break;
+    case 'ArrowUp': window.scrollBy({ top: -40, behavior: 'auto' }); break;
+    case 'PageDown': window.scrollBy({ top: page, behavior: 'auto' }); break;
+    case 'PageUp': window.scrollBy({ top: -page, behavior: 'auto' }); break;
+    case 'Home': window.scrollTo({ top: 0, behavior: 'auto' }); break;
+    case 'End': window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'auto' }); break;
+  }
+};
 
 toSwift({ type: 'ready' });

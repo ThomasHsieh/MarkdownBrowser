@@ -1368,9 +1368,23 @@
     return true;
   }
 
+  /* 對照並排、書在翻頁模式時，↑／↓／PageUp／PageDown／Home／End 歸心得（docs/SPEC.md 13.5）：
+   * 左右與空白翻書，其他捲心得。要不要轉由 Swift 決定（tab 模式不轉），翻頁還是捲動只有這裡知道。
+   * 捲動模式不轉：書自己能捲，上下鍵跟著焦點走。⇧ 是延伸選取，不轉 */
+  let forwardScrollKeys = false;
+  MB.setForwardScrollKeys = function (on) { forwardScrollKeys = !!on; };
+  const SCROLL_KEYS = new Set(['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End']);
+
   document.addEventListener('keydown', (e) => {
     if (!BK.active || e.metaKey || e.ctrlKey || e.altKey) return;
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    const t = e.target;
+    if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') return;
+    if (forwardScrollKeys && (BK.fixed || BK.paged) && SCROLL_KEYS.has(e.key)) {
+      if (e.shiftKey || e.isComposing || t.isContentEditable) return;
+      e.preventDefault();
+      I().toSwift({ type: 'scrollKey', key: e.key });
+      return;
+    }
     if (pageKey(e.key, e.shiftKey, false)) e.preventDefault();
   });
 

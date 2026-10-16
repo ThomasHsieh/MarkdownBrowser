@@ -116,6 +116,13 @@ struct WebPane: NSViewRepresentable {
                 guard let key = body["key"] as? String else { return }
                 (state as? DocumentState)?.forwardPageKey(key, shift: body["shift"] as? Bool ?? false)
 
+            case "scrollKey":
+                guard let key = body["key"] as? String else { return }
+                (state as? BookPane)?.host?.forwardScrollKey(key)
+
+            case "switchPane":
+                state.windowState?.switchFocusedPane()
+
             case "focus":
                 // 最後點過的那一欄是焦點欄（docs/SPEC.md 13.3）
                 state.windowState?.focusedPane = state is BookPane ? .book : .note
@@ -236,6 +243,14 @@ struct WebPane: NSViewRepresentable {
         func setLinked(_ on: Bool) { eval("MB.setLinked(\(on))") }
         func setForwardPageKeys(_ on: Bool) { eval("MB.setForwardPageKeys(\(on))") }
         func pageKey(_ key: String, shift: Bool) { eval("MB.pageKey(\(literal(key)), \(shift))") }
+        func setForwardScrollKeys(_ on: Bool) { eval("MB.setForwardScrollKeys(\(on))") }
+        func scrollKey(_ key: String) { eval("MB.scrollKey(\(literal(key)))") }
+        func setFocusFrame(_ on: Bool) { eval("MB.setFocusFrame(\(on))") }
+        func setPaneSwitch(_ on: Bool) { eval("MB.setPaneSwitch(\(on))") }
+        func takeFocus() {
+            guard let webView else { return }
+            webView.window?.makeFirstResponder(webView)
+        }
 
         func printDocument() {
             guard let webView else { return }
