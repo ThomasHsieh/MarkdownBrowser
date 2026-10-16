@@ -587,15 +587,16 @@ document.addEventListener('keydown', (e) => {
 });
 
 /* 對照時 Tab／⇧Tab 切到另一欄（docs/SPEC.md 13.3）：並排時切焦點欄，tab 模式切顯示哪一欄。
- * 只有兩欄，方向沒有差別。只開一欄時照舊交給瀏覽器（在連結之間跳）；正在打字時也不攔 */
+ * 只有兩欄，方向沒有差別。只開一欄時什麼都不做：交給瀏覽器的話，連結輪過一遍後
+ * 鍵盤焦點就跳出網頁，接著按 ↓ 翻不了頁，要再點一下內文才回來。正在打字時不攔 */
 let paneSwitch = false;
 MB.setPaneSwitch = function (on) { paneSwitch = !!on; };
 document.addEventListener('keydown', (e) => {
-  if (!paneSwitch || e.key !== 'Tab' || e.isComposing || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key !== 'Tab' || e.isComposing || e.metaKey || e.ctrlKey || e.altKey) return;
   const t = e.target;
   if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable) return;
   e.preventDefault();
-  toSwift({ type: 'switchPane' });
+  if (paneSwitch) toSwift({ type: 'switchPane' });
 });
 
 /* 反方向：書在翻頁模式時，書那欄的 ↑／↓／PageUp／PageDown／Home／End 轉過來捲心得
