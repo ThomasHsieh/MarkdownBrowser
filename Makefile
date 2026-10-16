@@ -27,7 +27,7 @@ fonts:
 
 # 連結器會把每個原始碼與 .o 的絕對路徑寫進除錯符號表（stabs），等於把這台機器的
 # 使用者名稱與資料夾結構跟著 .app 一起散佈出去。發版的 .app 不附 dSYM，用 -S 叫
-# 連結器不寫除錯資訊。試過 -file-prefix-map：路徑一處也沒少，心得那欄反而打不開。
+# 連結器不寫除錯資訊。試過 -file-prefix-map：路徑一處也沒少。
 build:
 	@echo "→ 編譯"
 	@swift build -c release --disable-sandbox -Xlinker -S
