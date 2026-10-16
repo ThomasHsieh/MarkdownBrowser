@@ -2,3 +2,4 @@
 .cache/
 *.app/
 .DS_Store
+CLAUDE.local.md

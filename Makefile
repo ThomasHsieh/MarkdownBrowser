@@ -40,6 +40,8 @@ app: fonts build icon-assets
 	@cp "$(BUILD_DIR)/$(APP)" "$(BUNDLE)/Contents/MacOS/$(APP)"
 	@cp -R Resources/web/. "$(BUNDLE)/Contents/Resources/web/"
 	@cp "$(CACHE)"/*.ttf "$(BUNDLE)/Contents/Resources/web/fonts/"
+	@# 字型是 SIL OFL 1.1，散佈時要附授權條文
+	@cp Resources/fonts/LICENSE-*.txt "$(BUNDLE)/Contents/Resources/web/fonts/"
 	@printf 'APPL????' > "$(BUNDLE)/Contents/PkgInfo"
 	@# 宣告語言，標準選單（檔案／編輯／顯示方式）才會跟系統一起變中文。
 	@mkdir -p "$(BUNDLE)/Contents/Resources/zh-Hant.lproj" "$(BUNDLE)/Contents/Resources/en.lproj"

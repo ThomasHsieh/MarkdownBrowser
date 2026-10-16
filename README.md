@@ -20,7 +20,7 @@ make run          # 建置後直接開
 make icons        # 由 AppIcon-v4.png 重建透明書本圖層與 ICNS（通常不需執行）
 ```
 
-字型不進版控，`make` 時依序找 `~/books/fonts/` → `~/Library/Fonts/`
+字型不進版控，`make` 時依序找環境變數 `FONTS_DIR` 指的資料夾（有設才找）→ `~/Library/Fonts/`
 → 官方 release 下載。共四個 Regular 字面：霞鶩文楷（楷體）與更紗黑體（黑體）
 各有比例版與等寬版。Sarasa 官方只提供 7z，那條路需要 `brew install p7zip`。
 
@@ -128,3 +128,4 @@ Swift 端只做殼，所有排版都在 CSS 裡，切字體、切明暗只是換
 
 字型 LXGW WenKai TC 與 Sarasa Gothic（皆 SIL OFL 1.1）、
 Markdown 解析 markdown-it（MIT）、EPUB 讀取 ZIPFoundation（MIT）。
+字型的授權條文在 `Resources/fonts/`，組 `.app` 時會一起複製進去。

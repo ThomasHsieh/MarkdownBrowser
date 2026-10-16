@@ -23,7 +23,7 @@ make clean        # 清 .build/，保留 .cache/fonts
 複製進 bundle 的，不是符號連結。
 
 建置需要 **Xcode 26** 或更新版本，`actool` 要編 `AppIcon.icon`。字型不進版控，
-`make` 時依序找 `~/books/fonts/` → `~/Library/Fonts/` → 官方 release
+`make` 時依序找 `$FONTS_DIR`（有設才找）→ `~/Library/Fonts/` → 官方 release
 下載到 `.cache/fonts/`；Sarasa 那條下載路徑需要 `brew install p7zip`。
 
 ## 架構

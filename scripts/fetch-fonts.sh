@@ -5,13 +5,14 @@
 # 黑體：更紗黑體 Sarasa Gothic TC / Sarasa Mono TC
 #
 # 每種只要 Regular 一個字面 —— 粗體的訊號交給顏色，不交給字重。
-# 依序找：書庫的 fonts/ → 系統已安裝 → 官方 release 下載。
+# 依序找：$FONTS_DIR（有設才找）→ 系統已安裝 → 官方 release 下載。
+# 字型放在自己的資料夾時，在 shell 設定裡 export FONTS_DIR=<那個資料夾>。
 set -euo pipefail
 
 DEST="${1:?用法: fetch-fonts.sh <目的資料夾>}"
 mkdir -p "$DEST"
 
-BOOKS_FONTS="$HOME/books/fonts"
+FONTS_DIR="${FONTS_DIR:-}"
 SYSTEM_FONTS=("$HOME/Library/Fonts" "/Library/Fonts")
 
 SARASA_VER="1.0.41"
@@ -39,9 +40,9 @@ for entry in "${WANTED[@]}"; do
 
   [[ -f "$DEST/$name" ]] && { echo "  已有　$name"; continue; }
 
-  if [[ -f "$BOOKS_FONTS/$name" ]]; then
-    cp "$BOOKS_FONTS/$name" "$DEST/$name"
-    echo "  books  $name"
+  if [[ -n "$FONTS_DIR" && -f "$FONTS_DIR/$name" ]]; then
+    cp "$FONTS_DIR/$name" "$DEST/$name"
+    echo "  自訂　$name"
     continue
   fi
 
