@@ -128,4 +128,4 @@ Swift 端只做殼，所有排版都在 CSS 裡，切字體、切明暗只是換
 
 字型 LXGW WenKai TC 與 Sarasa Gothic（皆 SIL OFL 1.1）、
 Markdown 解析 markdown-it（MIT）、EPUB 讀取 ZIPFoundation（MIT）。
-字型的授權條文在 `Resources/fonts/`，組 `.app` 時會一起複製進去。
+字型的授權條文在 `Resources/fonts/`，ZIPFoundation 的在 `Resources/licenses/`，組 `.app` 時都會一起複製進去。

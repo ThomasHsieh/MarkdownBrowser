@@ -42,6 +42,9 @@ app: fonts build icon-assets
 	@cp "$(CACHE)"/*.ttf "$(BUNDLE)/Contents/Resources/web/fonts/"
 	@# 字型是 SIL OFL 1.1，散佈時要附授權條文
 	@cp Resources/fonts/LICENSE-*.txt "$(BUNDLE)/Contents/Resources/web/fonts/"
+	@# 編進執行檔的 ZIPFoundation 是 MIT，散佈時同樣要附授權聲明
+	@mkdir -p "$(BUNDLE)/Contents/Resources/licenses"
+	@cp Resources/licenses/LICENSE-*.txt "$(BUNDLE)/Contents/Resources/licenses/"
 	@printf 'APPL????' > "$(BUNDLE)/Contents/PkgInfo"
 	@# 宣告語言，標準選單（檔案／編輯／顯示方式）才會跟系統一起變中文。
 	@mkdir -p "$(BUNDLE)/Contents/Resources/zh-Hant.lproj" "$(BUNDLE)/Contents/Resources/en.lproj"
