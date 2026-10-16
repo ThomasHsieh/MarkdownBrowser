@@ -133,10 +133,14 @@ WCAG AA 為止：
 
 兩個踩過的坑：
 
-- 強制淺色／深色時要設 `NSWindow.appearance`，否則只有網頁內容變色，
-  視窗外框（側欄、工具列、標題列）還是系統的。設在 `NSApp` 也有效，
-  但那是全 App 的，一個視窗切淺色會把所有視窗一起拖下去 —— 外觀是
-  每個視窗各自的（第 11 節），所以要設在視窗上。
+- 視窗外框（側欄、工具列、標題列）的明暗用 SwiftUI 的 `preferredColorScheme`，
+  每個視窗各自一份（第 11 節）。不設的話只有網頁內容變色。**不要自己設
+  `NSWindow.appearance`**：`WindowGroup` 的視窗由 SwiftUI 管，它每次更新環境都會把
+  `appearance` 寫回自己認定的值，同時把算出的明暗寫進託管的每個 AppKit view；兩邊搶著寫，
+  來回切幾次標題列、側欄、內文就各自卡在不同明暗，關掉側欄重開也救不回來。
+  「跟隨系統」也不交 nil，而是交系統目前的明暗（聽下一條的通知更新）：從 `.light`
+  改回 nil 時，SwiftUI 不會收回已經寫進側欄的淺色。設在 `NSApp` 則是全 App 的，
+  一個視窗切淺色會把所有視窗一起拖下去。
 - 跟隨系統時**不要用 KVO 盯 `NSApp.effectiveAppearance`** —— 它不保證 KVO
   相容，實測系統切換時不會觸發，結果是側欄自己變淺了、網頁內容還留在深色。
   要聽系統廣播的 `AppleInterfaceThemeChangedNotification`。

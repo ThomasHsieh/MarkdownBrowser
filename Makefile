@@ -64,8 +64,18 @@ install: app
 	@echo "→ 已安裝到 $(INSTALL_TO)/$(BUNDLE_NAME)"
 	@echo "   要讓 Finder 雙點擊 .md 開這個 App，再跑一次：make set-default"
 
+# 只結束 .build/ 那份舊的再開新的。直接 open 的話，同一個 bundle ID 已經在跑時
+# 只會把舊的帶到前景，測到的是舊程式碼。用 terminate 正常結束（關窗前要寫完註記），
+# 不用 kill；以 bundle ID 結束（osascript quit）會連安裝版一起關。
+# 開新的用 open -n：安裝版開著時，不加 -n 會被帶到前景的是安裝版
 run: app
-	@open "$(BUNDLE)"
+	@osascript -l JavaScript -e 'ObjC.import("AppKit"); \
+		const want = $$.NSURL.fileURLWithPath("$(CURDIR)/$(BUNDLE)").path.js; \
+		const apps = $$.NSRunningApplication.runningApplicationsWithBundleIdentifier("com.thomashsieh.markdownbrowser").js \
+			.filter(a => a.bundleURL.path.js === want); \
+		apps.forEach(a => a.terminate); \
+		for (let i = 0; i < 50 && apps.some(a => !a.terminated); i++) delay(0.1);' >/dev/null
+	@open -n "$(BUNDLE)"
 
 uninstall:
 	@rm -rf "$(INSTALL_TO)/$(BUNDLE_NAME)"

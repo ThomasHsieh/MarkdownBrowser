@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import Foundation
+import SwiftUI
 import UniformTypeIdentifiers
 
 /// 對照模式下的兩欄。
@@ -50,7 +51,7 @@ final class DocumentState: PaneDocument {
     @Published var appearance: String {
         didSet {
             settings.appearance = appearance
-            applyAppearance()
+            pushAppearance()
         }
     }
 
@@ -215,12 +216,11 @@ final class DocumentState: PaneDocument {
 
     // MARK: - 視窗
 
-    /// 視窗出現後才拿得到 `NSWindow`。強制的淺色／深色是設在視窗上的，
-    /// 所以掛上的同時要把外觀補上去。
+    /// 視窗出現後才拿得到 `NSWindow`。
     func attach(window: NSWindow) {
         guard self.window !== window else { return }
         self.window = window
-        applyAppearance()
+        pushAppearance()
     }
 
     func bringToFront() {
@@ -695,23 +695,40 @@ final class DocumentState: PaneDocument {
     // MARK: - 外觀
 
     /// `auto` 要問系統現在是哪一種，其餘直接用。
+    /// 系統的明暗問 `NSApp` 而不是視窗：視窗的外觀是我們自己透過 `preferredColorScheme`
+    /// 決定的，讀回來只會拿到自己設的值。
     var resolvedAppearance: String {
         guard appearance == "auto" else { return appearance }
-        let current = window?.effectiveAppearance ?? NSApp?.effectiveAppearance
-        return current?.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? "dark" : "light"
+        return systemIsDark ? "dark" : "light"
     }
 
-    /// 外觀是每個視窗各自的，所以強制模式設在 `NSWindow` 上而不是 `NSApp` ——
-    /// 設在 NSApp 會讓所有視窗一起變；而完全不設的話，只有網頁內容變色，
-    /// 視窗外框（側欄、工具列、標題列）還是系統的那一套。
-    private func applyAppearance() {
-        switch appearance {
-        case "light": window?.appearance = NSAppearance(named: .aqua)
-        case "dark": window?.appearance = NSAppearance(named: .darkAqua)
-        default: window?.appearance = nil          // nil = 交還給系統
-        }
+    /// 系統目前的明暗。`auto` 的視窗靠它決定 `colorScheme`，系統切換時由
+    /// `AppSettings` 聽到通知後呼叫 `systemAppearanceChanged()` 更新。
+    @Published private var systemIsDark = DocumentState.readSystemIsDark()
+
+    private static func readSystemIsDark() -> Bool {
+        NSApp?.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+    }
+
+    func systemAppearanceChanged() {
+        systemIsDark = Self.readSystemIsDark()
         pushAppearance()
     }
+
+    /// 視窗外框（側欄、工具列、標題列）的明暗交給 SwiftUI 的 `preferredColorScheme`，
+    /// 掛在 `DocumentWindow` 上，每個視窗各自一份。
+    ///
+    /// 不要自己設 `NSWindow.appearance`：`WindowGroup` 的視窗由 SwiftUI 管，它每次
+    /// 更新環境都會把 `appearance` 寫回它認定的值（沒有 preferredColorScheme 就是 nil），
+    /// 同時把自己算出的明暗寫進託管的每個 AppKit view。兩邊搶同一個屬性，來回切幾次
+    /// 標題列、側欄、內文就各自卡在不同的明暗，關掉側欄重開也救不回來。
+    ///
+    /// `auto` 也不交 nil，而是交系統目前的明暗：從 `.light` 改回 nil 時，SwiftUI
+    /// 不會收回已經寫進側欄的淺色，側欄就卡在淺色（實測淺色 → 自動必中）。
+    var colorScheme: ColorScheme {
+        resolvedAppearance == "dark" ? .dark : .light
+    }
+
 
     func pushAppearance() {
         let mode = resolvedAppearance

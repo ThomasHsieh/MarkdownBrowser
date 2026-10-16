@@ -5,7 +5,7 @@ struct ContentView: View {
     /// 這個視窗的狀態。字體、字級、外觀都是視窗各自的。
     @ObservedObject var state: DocumentState
 
-    /// 跟著 `NSWindow.appearance` 走（視窗各自的外觀），cmux 圖示要選對應的那張。
+    /// 跟著這個視窗的外觀走（`preferredColorScheme`），cmux 圖示要選對應的那張。
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {

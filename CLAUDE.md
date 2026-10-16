@@ -11,7 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 make              # = make app：取字型 → swift build -c release → 組 .app → ad-hoc 簽章
-make run          # 建置後直接開
+make run          # 建置後重開 .build/ 那份（舊的先正常結束，不動安裝版）
 make install      # 裝到 ~/Applications 並向 LaunchServices 註冊
 make set-default  # 把 .md 的預設開啟程式設成這個 App
 make status       # 查 .md 目前的預設開啟程式是誰
@@ -148,8 +148,10 @@ EPUB 的規格在 `docs/SPEC.md` 第 13 節。最容易被改壞的：
 
 - `.app` 一律組在 `.build/` 底下。預設開啟程式是**用 bundle ID 存的**，
   同一個 bundle ID 有兩份副本被 LaunchServices 註冊時會解析錯那份
-- 強制淺色／深色要設 `NSWindow.appearance`，不是 `NSApp.appearance`（那是全 App 的，
-  外觀是每個視窗各自的）。完全不設的話只有網頁內容變色，側欄與工具列還是系統的
+- 視窗外框的明暗用 `preferredColorScheme`（掛在 `DocumentWindow`），**不要自己設
+  `NSWindow.appearance`**：SwiftUI 每次更新環境都會把它寫回自己認定的值，兩邊搶著寫，
+  來回切幾次標題列、側欄、內文就各自卡在不同明暗。`auto` 也不交 nil，交系統目前的
+  明暗 —— 從 `.light` 改回 nil 時側欄會留在淺色。也不要設 `NSApp.appearance`（全 App 的）
 - 跟隨系統時**不要用 KVO 盯 `NSApp.effectiveAppearance`**，它不保證 KVO 相容。
   要聽 `AppleInterfaceThemeChangedNotification`
 - `⌘F` / `⌘G` 走 `NSEvent` local monitor 而不是選單快捷鍵：從選單觸發時

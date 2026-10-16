@@ -14,6 +14,7 @@ struct DocumentWindow: View {
 
     var body: some View {
         ContentView(state: state)
+            .preferredColorScheme(state.colorScheme)
             .background(WindowAccessor { window in
                 WindowRouter.shared.attach(state, to: window)
             })

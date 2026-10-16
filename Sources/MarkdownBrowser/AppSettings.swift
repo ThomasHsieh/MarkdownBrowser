@@ -233,8 +233,8 @@ final class AppSettings: ObservableObject {
             object: nil, queue: .main
         ) { _ in
             Task { @MainActor in
-                for document in WindowRouter.shared.documents where document.appearance == "auto" {
-                    document.pushAppearance()
+                for document in WindowRouter.shared.documents {
+                    document.systemAppearanceChanged()
                 }
             }
         }
