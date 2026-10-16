@@ -7,6 +7,18 @@
 所以重點訊號交給顏色 —— 這正是 `ghostty/config` 裡 `bold-color = #DD9853`
 配上 `font-synthetic-style = no-bold` 在做的事，一般 Markdown viewer 做不到。
 
+## 安裝
+
+1. 到[最新的 Release](https://github.com/ThomasHsieh/MarkdownBrowser/releases/latest)
+   下載 `MarkdownBrowser-<版本>.zip`
+2. 解壓縮，把 `MarkdownBrowser.app` 拖進「應用程式」或 `~/Applications`
+3. 第一次打開會被系統擋下，因為 App 只有 ad-hoc 簽章、沒有經過 Apple 公證。
+   被擋之後到「系統設定 → 隱私權與安全性」，在下方找到 MarkdownBrowser 那一行，
+   按「強制打開」並確認。之後就能正常開啟
+
+只在 macOS 26 測試過。要讓 Finder 雙點擊 `.md` 就用這個 App 開，對任一 `.md` 按
+「取得資訊 → 打開方式」選 MarkdownBrowser，再按「全部更改」。
+
 ## 建置
 
 需要 Xcode 26 或更新版本（使用 `actool` 編譯原生 Icon Composer 圖示資產）。
