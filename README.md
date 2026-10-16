@@ -124,6 +124,12 @@ Swift 端的狀態按範圍切：`PaneDocument` 是一欄一份（讀哪個檔�
 
 Swift 端只做殼，所有排版都在 CSS 裡，切字體、切明暗只是換 `<html>` 上一個屬性。
 
+## 文件裡的書名
+
+規格、註解與 commit 訊息裡拿來驗證的實際書籍，公開版一律換成「書 A」「書 B」這類代稱，
+書中的章名、小節標題與私人路徑也換成通用寫法（例如 `~/books`）。
+代稱與真實內容的對照只放在作者本機的 `CLAUDE.local.md`，已列入 `.gitignore`，不進版控。
+
 ## 授權
 
 字型 LXGW WenKai TC 與 Sarasa Gothic（皆 SIL OFL 1.1）、
