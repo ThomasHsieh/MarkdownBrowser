@@ -197,6 +197,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// 工具列的 cmux 按鈕：讀到一半要叫 Claude 改心得。在跑就帶到前景，沒在跑就開。
+    /// 刻意不管開在哪個資料夾 —— 找「已經開在這裡的 workspace」要解析 cmux 的輸出，不值得
+    private static let cmuxBundleID = "com.cmuxterm.app"
+
+    /// 工具列用 cmux 自己的 App 圖示，一眼認得出要切去哪裡。沒裝就回 nil，退回 SF Symbol。
+    /// 系統給的 App 圖示（`AppIcon.icns`）只有白底那張；Dock 上的黑底是 cmux 執行時依明暗
+    /// 自己換的 `AppIconDark`／`AppIconLight`，所以直接從它的 bundle 拿，跟著視窗外觀換。
+    /// 原圖 1024px，只改 `size` 的話工具列是臨場縮到 18pt，內插很粗、圓角一圈鋸齒。
+    /// 先用高品質內插縮成 1x、2x 兩張點陣圖再交出去
+    private static let cmuxIcons: (light: NSImage, dark: NSImage)? = {
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: cmuxBundleID) else { return nil }
+        let fallback = NSWorkspace.shared.icon(forFile: url.path)
+        let bundle = Bundle(url: url)
+        func sized(_ name: String) -> NSImage {
+            let source = bundle?.image(forResource: name) ?? fallback
+            let points = NSSize(width: 18, height: 18)
+            let image = NSImage(size: points)
+            for scale in [1, 2] {
+                let px = Int(points.width) * scale
+                guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: px, pixelsHigh: px,
+                                                 bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                                                 isPlanar: false, colorSpaceName: .deviceRGB,
+                                                 bytesPerRow: 0, bitsPerPixel: 0) else { continue }
+                rep.size = points
+                NSGraphicsContext.saveGraphicsState()
+                let context = NSGraphicsContext(bitmapImageRep: rep)
+                context?.imageInterpolation = .high
+                NSGraphicsContext.current = context
+                source.draw(in: NSRect(origin: .zero, size: points), from: .zero, operation: .copy, fraction: 1)
+                NSGraphicsContext.restoreGraphicsState()
+                image.addRepresentation(rep)
+            }
+            return image
+        }
+        return (sized("AppIconLight"), sized("AppIconDark"))
+    }()
+
+    static func cmuxIcon(dark: Bool) -> NSImage? {
+        cmuxIcons.map { dark ? $0.dark : $0.light }
+    }
+
+    @MainActor
+    static func activateCmux() {
+        guard let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: cmuxBundleID) else {
+            NSSound.beep()
+            return
+        }
+        NSWorkspace.shared.openApplication(at: app, configuration: NSWorkspace.OpenConfiguration())
+    }
+
     @MainActor
     static func highlightSelection() {
         WindowRouter.shared.active?.focusedBridge?.highlightSelection { ok in

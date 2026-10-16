@@ -1327,46 +1327,60 @@
   /* 翻頁鍵（docs/SPEC.md 13.5、13.9、13.12）
    * ← 上一頁、→ 下一頁。右翻左的固定版面書反過來：按鍵跟著畫面走，← 前往左邊那頁。
    * 翻頁模式另外認空白鍵、PageUp／PageDown、↑／↓，Home／End 跳本章頭尾。
-   * 捲動模式的「一頁」是一個畫面高、留兩行重疊。 */
-  document.addEventListener('keydown', (e) => {
-    if (!BK.active || e.metaKey || e.ctrlKey || e.altKey) return;
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-    const k = e.key;
+   * 捲動模式的「一頁」是一個畫面高、留兩行重疊。
+   * 對照時心得那欄轉過來的鍵（forwarded）也走這裡，見 MB.pageKey。
+   * 回傳有沒有處理，處理了才擋掉預設行為。 */
+  function pageKey(k, shift, forwarded) {
     let step = k === 'ArrowRight' ? 1 : k === 'ArrowLeft' ? -1 : 0;
 
     if (BK.fixed) {
       if (step) step = fx.rtl ? -step : step;
-      else if (k === ' ') step = e.shiftKey ? -1 : 1;
+      else if (k === ' ') step = shift ? -1 : 1;
       else if (k === 'PageDown') step = 1;
       else if (k === 'PageUp') step = -1;
-      if (!step) return;
-      e.preventDefault();
+      if (!step) return false;
       turn(step);
-      return;
+      return true;
     }
 
     if (BK.paged) {
       let edge = 0;
       if (!step) {
-        if (k === ' ') step = e.shiftKey ? -1 : 1;
+        if (k === ' ') step = shift ? -1 : 1;
         else if (k === 'PageDown' || k === 'ArrowDown') step = 1;
         else if (k === 'PageUp' || k === 'ArrowUp') step = -1;
         else if (k === 'Home') edge = -1;
         else if (k === 'End') edge = 1;
       }
-      if (!step && !edge) return;
-      e.preventDefault();
+      if (!step && !edge) return false;
       closePopover();
       if (edge) gotoChapterEdge(edge); else turnPage(step);
-      return;
+      return true;
     }
 
-    if (!step || e.shiftKey) return;
-    e.preventDefault();
+    // 捲動模式自己按空白鍵交給瀏覽器捲；轉過來的空白鍵沒有原生行為可用，換成一頁
+    if (forwarded && k === ' ') step = shift ? -1 : 1;
+    else if (shift) return false;
+    if (!step) return false;
     closePopover();
     const lineGap = parseFloat(getComputedStyle(document.body).lineHeight) || 32;
     window.scrollBy({ top: step * Math.max(100, window.innerHeight - lineGap * 2), behavior: 'auto' });
+    return true;
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (!BK.active || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if (pageKey(e.key, e.shiftKey, false)) e.preventDefault();
   });
+
+  /* 對照時心得那欄的 ←／→／空白鍵轉給書（docs/SPEC.md 13.5）。按鍵不是在這一欄發生的，
+   * 要自己記一筆使用者動過，否則晚到的版面校正會把剛翻的頁拉回去 */
+  MB.pageKey = function (k, shift) {
+    if (!BK.active) return;
+    I().noteUserInput();
+    pageKey(k, shift, true);
+  };
 
   /* 觸控板左右滑：累積到一個門檻才翻一頁，翻完冷卻一下，免得一次滑過好幾頁 */
   let wheelAcc = 0, wheelLock = 0;

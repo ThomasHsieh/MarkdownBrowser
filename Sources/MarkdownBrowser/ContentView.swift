@@ -5,6 +5,9 @@ struct ContentView: View {
     /// 這個視窗的狀態。字體、字級、外觀都是視窗各自的。
     @ObservedObject var state: DocumentState
 
+    /// 跟著 `NSWindow.appearance` 走（視窗各自的外觀），cmux 圖示要選對應的那張。
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         HSplitView {
             if state.sidebarVisible {
@@ -47,6 +50,17 @@ struct ContentView: View {
         }
 
         ToolbarItemGroup(placement: .primaryAction) {
+            Button {
+                AppDelegate.activateCmux()
+            } label: {
+                if let icon = AppDelegate.cmuxIcon(dark: colorScheme == .dark) {
+                    Label { Text("cmux") } icon: { Image(nsImage: icon) }
+                } else {
+                    Label("cmux", systemImage: "terminal")
+                }
+            }
+            .help("切到 cmux")
+
             Menu {
                 Picker("外觀", selection: $state.appearance) {
                     ForEach(AppSettings.appearanceChoices, id: \.id) { choice in

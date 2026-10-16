@@ -116,7 +116,9 @@ final class DocumentState: PaneDocument {
     }
 
     /// 由版面回報：現在是不是窄到改成 tab。同步時要知道另一欄看不看得到。
-    var isTabbed = false
+    var isTabbed = false {
+        didSet { if isTabbed != oldValue { pushLinked() } }
+    }
 
     /// 使用者主動打開的是哪一邊。關掉對照時留下這一邊。
     private(set) var primarySide: PaneSide = .note
@@ -181,6 +183,21 @@ final class DocumentState: PaneDocument {
         send(isComparing, to: self)
         // 書那欄：對照中，或只開書但對照開關開著（點標題會帶出那章的心得）
         send(isComparing || (documentURL == nil && compareEnabled && book.documentURL != nil), to: book)
+
+        // 心得那欄的翻頁鍵歸書：兩欄並排才轉，tab 模式下書看不見（docs/SPEC.md 13.5）
+        let forward = isComparing && !isTabbed
+        if let bridge, bridge.isReady, sentForward != forward {
+            sentForward = forward
+            bridge.setForwardPageKeys(forward)
+        }
+    }
+
+    private var sentForward: Bool?
+
+    /// 心得那欄轉過來的翻頁鍵。焦點留在心得，只把這一下交給書。
+    func forwardPageKey(_ key: String, shift: Bool) {
+        guard isComparing, !isTabbed else { return }
+        book.bridge?.pageKey(key, shift: shift)
     }
 
     private func send(_ on: Bool, to pane: PaneDocument) {
@@ -192,6 +209,7 @@ final class DocumentState: PaneDocument {
     /// 某一欄的網頁端（重新）載入完成：之前送的狀態不算數
     func paneDidLoad(_ pane: PaneDocument) {
         sentLinked[ObjectIdentifier(pane)] = nil
+        if pane === self { sentForward = nil }
         pushLinked()
     }
 
@@ -760,6 +778,8 @@ protocol WebBridge: AnyObject {
     func setBookLayout(_ mode: String)
     func syncTo(_ request: [String: Any])
     func setLinked(_ on: Bool)
+    func setForwardPageKeys(_ on: Bool)
+    func pageKey(_ key: String, shift: Bool)
     func revealPendingSync()
     func toast(_ text: String)
 }

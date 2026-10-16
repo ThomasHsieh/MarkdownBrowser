@@ -112,6 +112,10 @@ struct WebPane: NSViewRepresentable {
             case "bookPosition":
                 state.positionChanged(body)
 
+            case "pageKey":
+                guard let key = body["key"] as? String else { return }
+                (state as? DocumentState)?.forwardPageKey(key, shift: body["shift"] as? Bool ?? false)
+
             case "focus":
                 // 最後點過的那一欄是焦點欄（docs/SPEC.md 13.3）
                 state.windowState?.focusedPane = state is BookPane ? .book : .note
@@ -230,6 +234,8 @@ struct WebPane: NSViewRepresentable {
         func revealPendingSync() { eval("MB.revealPendingSync()") }
         func toast(_ text: String) { eval("MB.toast(\(literal(text)))") }
         func setLinked(_ on: Bool) { eval("MB.setLinked(\(on))") }
+        func setForwardPageKeys(_ on: Bool) { eval("MB.setForwardPageKeys(\(on))") }
+        func pageKey(_ key: String, shift: Bool) { eval("MB.pageKey(\(literal(key)), \(shift))") }
 
         func printDocument() {
             guard let webView else { return }

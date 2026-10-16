@@ -546,6 +546,7 @@ MB.internal = {
   afterLayout,
   reveal,
   userMoved(since) { return lastUserInput > (since || renderedAt); },
+  noteUserInput() { lastUserInput = Date.now(); },
   markRendered() { renderedAt = Date.now(); },
   toSwift,
   closeFind() { if (!findBar.hidden) MB.closeFind(); },
@@ -563,6 +564,21 @@ document.getElementById('find-close').addEventListener('click', () => MB.closeFi
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !findBar.hidden) { e.preventDefault(); MB.closeFind(); }
+});
+
+/* 對照、兩欄並排時，心得這欄的 ←／→／空白鍵歸書（docs/SPEC.md 13.5）。
+ * 要不要轉由 Swift 決定（tab 模式不轉：翻一本看不見的書沒有回饋）；
+ * 但正在打字（搜尋框、註記）只有這裡知道。⇧←／⇧→ 是延伸選取，不轉。 */
+let forwardPageKeys = false;
+MB.setForwardPageKeys = function (on) { forwardPageKeys = !!on; };
+document.addEventListener('keydown', (e) => {
+  if (!forwardPageKeys || e.isComposing || e.metaKey || e.ctrlKey || e.altKey) return;
+  const t = e.target;
+  if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable) return;
+  const k = e.key;
+  if (k !== ' ' && (e.shiftKey || (k !== 'ArrowLeft' && k !== 'ArrowRight'))) return;
+  e.preventDefault();
+  toSwift({ type: 'pageKey', key: k, shift: e.shiftKey });
 });
 
 toSwift({ type: 'ready' });
