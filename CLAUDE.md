@@ -6,11 +6,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 建置與執行
 
-沒有測試、沒有 linter。驗證方式是 `make run` 後拿真實的中文 Markdown（
-`~/books/心得/`）開起來看。
+沒有測試；`make check` 只檢查網頁端 JS 的語法（`make app` 會先跑）。驗證方式是
+`make run` 後拿真實的中文 Markdown（`~/books/心得/`）開起來看。
+
+改手感（捲動、動畫、按鍵、字型渲染）之前，先在安裝版（`~/Applications` 那份）上操作一次
+記下**基準**；做完跟安裝版並排比過，再交給使用者驗收。
+
+要看網頁端執行期的數值時，暫時加 `MB.debugLog(…)`，從終端機讀
+`/usr/bin/log show --last 5m --style compact --predicate 'subsystem == "com.thomashsieh.markdownbrowser"'`
+（zsh 的 `log` 是內建指令，要寫完整路徑）。看完把呼叫拿掉。
 
 ```bash
-make              # = make app：取字型 → swift build -c release → 組 .app → ad-hoc 簽章
+make              # = make app：JS 語法檢查 → 取字型 → swift build -c release → 組 .app → ad-hoc 簽章
+make check        # 只跑 node --check Resources/web/*.js（沒裝 node 就略過）
 make run          # 建置後重開 .build/ 那份（舊的先正常結束，不動安裝版）
 make install      # 裝到 ~/Applications 並向 LaunchServices 註冊
 make set-default  # 把 .md 的預設開啟程式設成這個 App
@@ -57,7 +65,7 @@ Swift 端只做殼，**所有排版都在 CSS 裡**。切字體、切明暗只�
   並推給自己那個視窗的網頁端，沒有其他同步路徑
 - `WebBridge` protocol 是 Swift → JS 的唯一介面，由 `WebPane.Coordinator` 實作，
   一欄一份。兩欄之間不直接溝通，一律經過 Swift 轉送（章名對應、換檔、搬視窗都要 Swift）
-- JS → Swift 有十五種訊息：`ready`、`outline`、`activeHeading`、`openExternal`，
+- JS → Swift 有十六種訊息：`ready`、`outline`、`activeHeading`、`openExternal`、除錯用的 `debugLog`，
   標記的 `highlights`、`saveHighlights`、`copy`、`bannerAction`，以及對照的
   `headingClicked`、`quoteClicked`、`bookPosition`、`focus`、`pageKey`、`scrollKey`、`switchPane`。需要回傳值的
   呼叫（`highlightSelection`、`commitNote`、`probeHighlights`）用 `evaluateJavaScript`

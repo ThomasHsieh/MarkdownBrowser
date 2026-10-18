@@ -7,7 +7,7 @@ BUILD_DIR  := .build/release
 CACHE      := .cache/fonts
 INSTALL_TO := $(HOME)/Applications
 
-.PHONY: all build app fonts icons icon-assets install run clean uninstall set-default status
+.PHONY: all build app check fonts icons icon-assets install run clean uninstall set-default status
 
 all: app
 
@@ -32,7 +32,14 @@ build:
 	@echo "→ 編譯"
 	@swift build -c release --disable-sandbox -Xlinker -S
 
-app: fonts build icon-assets
+# 網頁端的 JS 語法錯不會在建置時報，App 裡只是一片空白。沒裝 node 就略過，不擋建置
+check:
+	@if command -v node >/dev/null 2>&1; then \
+		for f in Resources/web/*.js; do node --check "$$f" || exit 1; done; \
+		echo "→ JS 語法檢查通過"; \
+	else echo "  ⚠️  沒有 node，略過 JS 語法檢查"; fi
+
+app: check fonts build icon-assets
 	@echo "→ 組 $(BUNDLE)"
 	@rm -rf "$(BUNDLE)"
 	@mkdir -p .build

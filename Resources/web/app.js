@@ -88,6 +88,13 @@ function restoreAnchor(anchor) {
 const MB = {};
 window.MB = MB;
 
+/* 除錯用：Swift 收到後寫進系統 log，從終端機讀得到（指令見 CLAUDE.md）。Web Inspector 的 console
+ * 只有人看得到，agent 讀不到。物件轉成 JSON，用完把呼叫拿掉 */
+MB.debugLog = function (...parts) {
+  const text = parts.map((p) => (typeof p === 'string' ? p : JSON.stringify(p))).join(' ');
+  toSwift({ type: 'debugLog', text });
+};
+
 let renderedAt = 0;
 
 MB.render = function (markdown, opts) {

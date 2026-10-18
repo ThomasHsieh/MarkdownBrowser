@@ -1,4 +1,5 @@
 import AppKit
+import os
 import SwiftUI
 import WebKit
 
@@ -38,6 +39,7 @@ struct WebPane: NSViewRepresentable {
 
     @MainActor
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler, WebBridge {
+        static let webLog = Logger(subsystem: "com.thomashsieh.markdownbrowser", category: "web")
 
         let schemeHandler = ResourceSchemeHandler()
         weak var webView: WKWebView?
@@ -126,6 +128,12 @@ struct WebPane: NSViewRepresentable {
             case "focus":
                 // 最後點過的那一欄是焦點欄（docs/SPEC.md 13.3）
                 state.windowState?.focusedPane = state is BookPane ? .book : .note
+
+            case "debugLog":
+                // NSLog 的內容在系統 log 裡會被遮成 <private>，要明確標 public 才讀得到
+                let pane = state is BookPane ? "book" : "note"
+                let text = body["text"] as? String ?? ""
+                Self.webLog.notice("[\(pane, privacy: .public)] \(text, privacy: .public)")
 
             default:
                 break
