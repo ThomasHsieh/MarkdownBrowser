@@ -1022,7 +1022,7 @@
     if (anim) { cancelAnimationFrame(anim); anim = null; }
     hideFullpage();
     const from = content.scrollLeft;
-    if (!animate || Math.abs(x - from) < 2 || Math.abs(x - from) > geom().vw * 1.5) {
+    if (!animate || I().reducedMotion() || Math.abs(x - from) < 2 || Math.abs(x - from) > geom().vw * 1.5) {
       content.scrollLeft = x;
       updateIndicators();
       return;
@@ -1363,8 +1363,7 @@
     else if (shift) return false;
     if (!step) return false;
     closePopover();
-    const lineGap = parseFloat(getComputedStyle(document.body).lineHeight) || 32;
-    window.scrollBy({ top: step * Math.max(100, window.innerHeight - lineGap * 2), behavior: 'auto' });
+    I().glideBy(step * I().pageStep());
     return true;
   }
 

@@ -160,6 +160,50 @@ function reveal(el, smooth, block) {
   el.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: block || 'start' });
 }
 
+/* ── 平滑捲動（docs/SPEC.md 5.5）────────────────────────────
+ * 捲動模式的 ↑／↓、PageUp／PageDown、空白鍵與實體滑鼠滾輪都走這裡。
+ * 用臨界阻尼的彈簧追目標，不用固定時長的曲線：試過每次觸發就從目前位置重起一段 200ms
+ * ease-out，單按 40px 短到看不出動畫，按住時每次重起速度又歸零重來，一頓一頓的。
+ * 彈簧把速度帶著走，連續觸發只是把目標往前推，按住就是等速滑過去。
+ * 別人在動畫途中捲過（觸控板、拖捲軸、跳到標題），位置就對不上，當場放手，不跟他搶。 */
+const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+function reducedMotion() { return reducedMotionQuery.matches; }
+
+const ARROW_STEP = 64;        // WebKit 原生一行是 40，配上彈簧顯得太碎；對齊滑鼠滾輪一格（實測約 64）
+const SPRING = 24;            // 角頻率（1/s）：約 200ms 走完 95%，距離長短都一樣。18 太黏
+let glide = null;             // { target, pos, v, last, t }
+
+function pageStep() {
+  const lineGap = parseFloat(getComputedStyle(document.body).lineHeight) || 32;
+  return Math.max(100, window.innerHeight - lineGap * 2);
+}
+
+function glideBy(dy) {
+  const max = document.documentElement.scrollHeight - window.innerHeight;
+  const target = Math.max(0, Math.min((glide ? glide.target : window.scrollY) + dy, max));
+  if (reducedMotion()) { glide = null; window.scrollTo(0, target); return; }
+  if (glide) { glide.target = target; return; }                 // 跑到一半：只推目標，速度帶著走
+  const y = window.scrollY;
+  if (Math.abs(target - y) < 1) return;
+  const run = glide = { target, pos: y, v: 0, last: y, t: performance.now() };
+  const tick = (now) => {
+    if (glide !== run) return;
+    if (Math.abs(window.scrollY - run.last) > 1) { glide = null; return; }
+    // 臨界阻尼彈簧的解析解，逐格推進；卡頓後的大 dt 截掉，免得一格跳太遠
+    const dt = Math.min(0.05, Math.max(0, (now - run.t) / 1000));
+    run.t = now;
+    const d = run.pos - run.target, e = Math.exp(-SPRING * dt), c = run.v + SPRING * d;
+    run.pos = run.target + (d + c * dt) * e;
+    run.v = (run.v - SPRING * c * dt) * e;
+    const done = Math.abs(run.pos - run.target) < 0.5 && Math.abs(run.v) < 20;
+    if (done) run.pos = run.target;
+    run.last = Math.round(run.pos);
+    window.scrollTo(0, run.last);
+    if (done) glide = null; else requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
 MB.scrollToHeading = function (id) {
   const el = document.getElementById(id);
   if (el) { reveal(el, true); settleOn(el); }
@@ -552,6 +596,9 @@ MB.internal = {
   reveal,
   userMoved(since) { return lastUserInput > (since || renderedAt); },
   noteUserInput() { lastUserInput = Date.now(); },
+  glideBy,
+  pageStep,
+  reducedMotion,
   markRendered() { renderedAt = Date.now(); },
   toSwift,
   closeFind() { if (!findBar.hidden) MB.closeFind(); },
@@ -601,19 +648,80 @@ document.addEventListener('keydown', (e) => {
 
 /* 反方向：書在翻頁模式時，書那欄的 ↑／↓／PageUp／PageDown／Home／End 轉過來捲心得
  * （docs/SPEC.md 13.5）。按鍵不是在這一欄發生的，要自己記一筆使用者動過，
- * 否則晚到的版面校正會把剛捲的位置拉回去。行為比照原生捲動 */
+ * 否則晚到的版面校正會把剛捲的位置拉回去。行為比照這一欄自己按的鍵 */
 MB.scrollKey = function (k) {
   lastUserInput = Date.now();
-  const lineGap = parseFloat(getComputedStyle(document.body).lineHeight) || 32;
-  const page = Math.max(100, window.innerHeight - lineGap * 2);
   switch (k) {
-    case 'ArrowDown': window.scrollBy({ top: 40, behavior: 'auto' }); break;
-    case 'ArrowUp': window.scrollBy({ top: -40, behavior: 'auto' }); break;
-    case 'PageDown': window.scrollBy({ top: page, behavior: 'auto' }); break;
-    case 'PageUp': window.scrollBy({ top: -page, behavior: 'auto' }); break;
-    case 'Home': window.scrollTo({ top: 0, behavior: 'auto' }); break;
-    case 'End': window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'auto' }); break;
+    case 'ArrowDown': glideBy(ARROW_STEP); break;
+    case 'ArrowUp': glideBy(-ARROW_STEP); break;
+    case 'PageDown': glideBy(pageStep()); break;
+    case 'PageUp': glideBy(-pageStep()); break;
+    // 幾萬 px 塞進 200ms 只是一片糊，Home／End 直接跳（同 goView 超過 1.5 個畫面就不動畫）
+    case 'Home': glide = null; window.scrollTo(0, 0); break;
+    case 'End': glide = null; window.scrollTo(0, document.documentElement.scrollHeight); break;
   }
 };
+
+/* 捲動模式自己這一欄的捲動鍵，從 WebKit 手上接過來改成平滑。翻頁模式的書另外處理（book.js），
+ * 前面的監聽已經轉給另一欄的（defaultPrevented）不管。⇧ 方向鍵是延伸選取、⌥ 方向鍵是系統的
+ * 整頁捲動，都照舊；Home／End 原生就是直接跳，不必接。 */
+function scrollStep(e) {
+  switch (e.key) {
+    case 'ArrowDown': return e.shiftKey ? 0 : ARROW_STEP;
+    case 'ArrowUp': return e.shiftKey ? 0 : -ARROW_STEP;
+    case 'PageDown': return e.shiftKey ? 0 : pageStep();
+    case 'PageUp': return e.shiftKey ? 0 : -pageStep();
+    case ' ': return e.shiftKey ? -pageStep() : pageStep();
+  }
+  return 0;
+}
+
+const TYPING = new Set(['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON']);
+document.addEventListener('keydown', (e) => {
+  if (e.defaultPrevented || e.isComposing || e.metaKey || e.ctrlKey || e.altKey) return;
+  const book = window.MBBook;
+  if (book && (book.paged || book.fixed)) return;
+  const t = e.target;
+  if (TYPING.has(t.tagName) || t.isContentEditable) return;
+  const dy = scrollStep(e);
+  if (!dy) return;
+  e.preventDefault();
+  glideBy(dy);
+});
+
+/* 實體滑鼠滾輪才接手，觸控板交給 WebKit：它連續、有慣性與回彈，自己接只會變差。
+ * JS 拿不到裝置類型，只能看事件長相。試過「deltaY 是 4.000244 的整數倍」（macOS 0.1 行的
+ * 定點數 × 40px），但經過滑鼠驅動程式加速後一格是 63.8 上下、小數每次不同，完全對不上。
+ * 改看節奏：觸控板一動就是每 8–16ms 一筆、起手很小；滑鼠一格就是一大步，前面通常停過。
+ * 所以「夠大而且前面停過」算滑鼠，緊接在滑鼠那筆後面的（快轉）也算，其餘都放行。 */
+const WHEEL_MIN = 30, WHEEL_GAP = 40;
+let wheelPrev = 0, wheelPrevNotched = false;
+function isNotchedWheel(e) {
+  const now = performance.now(), gap = now - wheelPrev;
+  wheelPrev = now;
+  const d = Math.abs(e.deltaY);
+  wheelPrevNotched = e.deltaMode === 0 && !e.deltaX && d >= WHEEL_MIN
+    && (gap > WHEEL_GAP || wheelPrevNotched);
+  return wheelPrevNotched;
+}
+
+/* 指標底下有自己能直向捲的框（注腳浮框、註記）就讓它自己捲 */
+function innerScroller(el) {
+  for (; el && el !== document.body && el !== document.documentElement; el = el.parentElement) {
+    if (el.scrollHeight <= el.clientHeight) continue;
+    const oy = getComputedStyle(el).overflowY;
+    if (oy === 'auto' || oy === 'scroll') return true;
+  }
+  return false;
+}
+
+window.addEventListener('wheel', (e) => {
+  if (e.defaultPrevented || e.ctrlKey) return;              // ctrl＋滾輪是縮放手勢
+  const book = window.MBBook;
+  if (book && (book.paged || book.fixed)) return;
+  if (!isNotchedWheel(e) || innerScroller(e.target)) return;
+  e.preventDefault();
+  glideBy(e.deltaY);
+}, { passive: false });
 
 toSwift({ type: 'ready' });
