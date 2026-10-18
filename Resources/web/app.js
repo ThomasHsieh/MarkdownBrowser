@@ -161,7 +161,9 @@ function reveal(el, smooth, block) {
 }
 
 /* ── 平滑捲動（docs/SPEC.md 5.5）────────────────────────────
- * 捲動模式的 ↑／↓、PageUp／PageDown、空白鍵與實體滑鼠滾輪都走這裡。
+ * 實體滑鼠滾輪、書捲動模式的 ←／→、對照時另一欄轉過來的捲動鍵走這裡 —— 都是 WebKit 原生不會
+ * 動畫的。這一欄自己的 ↑／↓、PageUp／PageDown、空白鍵不攔：試過接過來走彈簧，比原生差。
+ * WebKit 有自己的鍵盤捲動動畫，按住加速、放開減速，它看得到放開，JS 只看得到一串 keydown。
  * 用臨界阻尼的彈簧追目標，不用固定時長的曲線：試過每次觸發就從目前位置重起一段 200ms
  * ease-out，單按 40px 短到看不出動畫，按住時每次重起速度又歸零重來，一頓一頓的。
  * 彈簧把速度帶著走，連續觸發只是把目標往前推，按住就是等速滑過去。
@@ -661,33 +663,6 @@ MB.scrollKey = function (k) {
     case 'End': glide = null; window.scrollTo(0, document.documentElement.scrollHeight); break;
   }
 };
-
-/* 捲動模式自己這一欄的捲動鍵，從 WebKit 手上接過來改成平滑。翻頁模式的書另外處理（book.js），
- * 前面的監聽已經轉給另一欄的（defaultPrevented）不管。⇧ 方向鍵是延伸選取、⌥ 方向鍵是系統的
- * 整頁捲動，都照舊；Home／End 原生就是直接跳，不必接。 */
-function scrollStep(e) {
-  switch (e.key) {
-    case 'ArrowDown': return e.shiftKey ? 0 : ARROW_STEP;
-    case 'ArrowUp': return e.shiftKey ? 0 : -ARROW_STEP;
-    case 'PageDown': return e.shiftKey ? 0 : pageStep();
-    case 'PageUp': return e.shiftKey ? 0 : -pageStep();
-    case ' ': return e.shiftKey ? -pageStep() : pageStep();
-  }
-  return 0;
-}
-
-const TYPING = new Set(['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON']);
-document.addEventListener('keydown', (e) => {
-  if (e.defaultPrevented || e.isComposing || e.metaKey || e.ctrlKey || e.altKey) return;
-  const book = window.MBBook;
-  if (book && (book.paged || book.fixed)) return;
-  const t = e.target;
-  if (TYPING.has(t.tagName) || t.isContentEditable) return;
-  const dy = scrollStep(e);
-  if (!dy) return;
-  e.preventDefault();
-  glideBy(dy);
-});
 
 /* 實體滑鼠滾輪才接手，觸控板交給 WebKit：它連續、有慣性與回彈，自己接只會變差。
  * JS 拿不到裝置類型，只能看事件長相。試過「deltaY 是 4.000244 的整數倍」（macOS 0.1 行的
