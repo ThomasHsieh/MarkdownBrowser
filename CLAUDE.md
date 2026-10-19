@@ -43,7 +43,8 @@ SwiftUI（視窗、選單、Finder 關聯、檔案監聽、側欄）
         ▼
 WKWebView（內容區：markdown-it + base.css，一欄一份）
         ├── highlights.js：標記與註記（docs/SPEC.md 第 12 節）
-        └── book.js：EPUB 那欄（docs/SPEC.md 第 13 節）
+        ├── book.js：書那欄（docs/SPEC.md 第 13 節）
+        └── bookpdf.js：書那欄的 PDF，用 vendor 的 pdf.js 畫（docs/SPEC.md 13.13）
 ```
 
 對照模式下一個視窗有兩欄（左書右心得），各自一個 WKWebView。
@@ -57,7 +58,7 @@ Swift 端只做殼，**所有排版都在 CSS 裡**。切字體、切明暗只�
 |---|---|---|
 | `PaneDocument` | 一欄一份 | 讀哪個檔、大綱、標記、sidecar、檔案監聽 |
 | `DocumentState` | 一個視窗一份 | 心得那欄（繼承 `PaneDocument`）＋側欄、字體、字級、外觀、對照開關、`book` |
-| `BookPane` | 一個視窗一份 | 書那欄（繼承 `PaneDocument`），EPUB 解析結果與閱讀位置 |
+| `BookPane` | 一個視窗一份 | 書那欄（繼承 `PaneDocument`），`EpubBook` 或 `PdfBook` 與閱讀位置 |
 | `AppSettings` | 全 App（單例） | 新視窗的起始設定、最近開啟 |
 | `WindowRouter` | 全 App（單例） | 誰開著、誰在前景、下一個檔案開到哪裡 |
 
@@ -92,6 +93,14 @@ EPUB 的規格在 `docs/SPEC.md` 第 13 節。最容易被改壞的：
   只有手動指定、各資料夾上次讀的心得、書的閱讀位置存在 UserDefaults
 - 改 `ChapterMap` 的比對規則之前，先拿現有四本書（書 A、書 B、書 C、
   書 D）跑一遍看結果 —— SPEC 13.6 那幾條規則都是被真實資料逼出來的
+- **PDF 照原樣顯示**，粗體照樣加粗，跟固定版面 EPUB 同一個例外（SPEC 13.13）。`book.js` 只在
+  幾個分岔點（渲染、位置、同步、按鍵、版面）轉給 `bookpdf.js`。書那欄的檔案經 `BookResources`
+  （`EpubBook`／`PdfBook`）從 `mbres://book/` 送
+- **PDF 的一切都掛在頁框上**：canvas、文字層、標記框、搜尋命中、閃示都是 `.mb-pdf-page` 的子元素，
+  頁框開檔就全部在；翻頁模式只隱藏、不重建。新功能照這個做，標記與搜尋才不必跟著翻頁重來
+- **PDF 全文只有一份**（`P.text`）：抽字時逐字正規化康熙部首、照 13.13 接起換行，並記下每個文字項目
+  在頁內的起點（`itemStarts`）。標記、搜尋、引文、選取換算、字的框都靠它；改全文的組法就要一起看
+  `lineRects` 與 `offsetAt`
 
 ### 標記
 
@@ -104,6 +113,11 @@ EPUB 的規格在 `docs/SPEC.md` 第 13 節。最容易被改壞的：
 - **sidecar 讀不出來（合併衝突、版本太新）一律唯讀、絕不覆蓋**
 - 錨點是引文（exact／prefix／suffix／heading），**不存偏移量**。重載同一份文件時
   `render` 不帶 `highlights`，網頁端沿用記憶體裡的標記重新比對
+
+`highlights.js` 綁 DOM 的事（取全文、位置提示、選取換算、畫標記、找滑鼠下的標記）都經過
+**文字來源** `src()`：心得與 EPUB 是檔內的 DOM 版，PDF 是 `MBBook.pdfSource`。新增要碰 DOM 的
+標記邏輯就加進這個介面、兩邊都實作，第 12 節的規則才維持一份。PDF 的位置提示存在 `page`、
+不寫 `heading`（SPEC 12.4）。
 
 ### 兩個正交的軸
 
@@ -226,9 +240,21 @@ EPUB 的規格在 `docs/SPEC.md` 第 13 節。最容易被改壞的：
   否則 SwiftUI 會重建 WKWebView（見 `ReadingArea`）
 - **實機測試用另一個 bundle ID 的副本**：複製 `.build/MarkdownBrowser.app`，用
   PlistBuddy 改 `CFBundleIdentifier`（例如加 `.epubtest`）再 ad-hoc 簽章。UserDefaults
-  就跟安裝版分開，不會把測試檔寫進「最近開啟」。標記要測就拿 EPUB 的副本，別在
-  `~/books/` 旁邊生出 sidecar。UI 自動化點不到 SwiftUI 的 List 與分段控制，
-  側欄與 tab 要用快捷鍵或網頁內的點擊測
+  就跟安裝版分開，不會把測試檔寫進「最近開啟」。標記要測就拿 EPUB 或 PDF 的**複本**（不是捷徑：
+  開檔會解析捷徑，sidecar 就寫到原檔旁邊），別在 `~/books/` 旁邊生出 sidecar。AX 式的 UI 自動化
+  點不到 SwiftUI 的 List 與分段控制；用 `CGEvent` 送真的滑鼠點擊就點得到（終端機要有輔助使用權限）。
+  `screencapture -l` 也會抓到 SwiftUI 隱藏的空視窗，先確認視窗標題再截
+- **測試檔放家目錄底下**（例如 `~/Library/Caches/…`），不要放 `/tmp`：開檔時
+  `resolvingSymlinksInPath` 把 `/private/tmp` 變成 `/tmp`，列資料夾卻得到 `/private/tmp`，
+  同一份心得比對不起來，章節對應整個失效，看起來像同步壞了
+- **PDF 不能走 `mbres://doc/`**：那支回沒有狀態碼的 `URLResponse`，pdf.js 當成失敗；網頁在
+  `mbres://app`，`fetch` 它又是跨來源被擋。PDF 走 `mbres://book/`（`HTTPURLResponse` 帶 CORS）
+- **WKWebView 不支援 canvas 的 `ctx.filter`**（讀回 `undefined`、設了不報錯），pdf.js 的
+  `pageColors` 因此完全沒作用。要替 canvas 換色只能用 CSS `filter` 或自己處理像素
+- **PDF 的書籤與全文是網頁端事後讀的**，比 Swift 的配對、同步、標記載入都晚到。用到它們的動作
+  先存著、到了再做（`pendingOpenSync`、`P.pendingSync`、`P.hlPayload`），別假設開檔當下就有
+- **雙頁的章首常在右頁**：翻頁模式記住跳到的那一頁（`P.cur`），翻頁才以跨頁為單位。換成跨頁的
+  左頁的話，章名、`Home`／`End`、翻頁跨章換心得都會算成上一章
 
 ## 慣例
 
