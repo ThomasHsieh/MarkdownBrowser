@@ -102,6 +102,8 @@
     P.near.clear();
     P.text = null;
     P.quoteAll = null;   // 全書的引文比對用字串，第一次找全書時才建
+    P.findText = null;   // 搜尋用的全書字串，第一次搜尋時才建
+    P.hits = [];
     P.toc = [];
     P.pendingSync = null;
     P.tocLoaded = false;
@@ -293,6 +295,47 @@
     else setTimeout(show, 450);
   }
 
+  /* ── 搜尋（Cmd F）─────────────────────────────────────────
+   * 字是 canvas 畫的，不能像心得那樣把命中包成 <mark>：在全文裡找，換算成框疊在頁框上。
+   * 比對時兩邊都去掉空白與換行 —— PDF 的中文句子常被斷在兩行，抽出來中間夾著換行。
+   * 英文詞之間的空白也一起去掉，搜「Donald Kendall」照樣找得到 */
+  BK.pdfFindAll = function (query) {
+    BK.pdfClearHits();
+    const q = query.replace(/\s/g, '').toLowerCase();
+    if (!q || !P.text || !P.text.hasText) return [];
+    if (!P.findText) P.findText = keyText(P.pages.map((_, i) => i), (c) => (/\s/.test(c) ? '' : c.toLowerCase()));
+    const { text, where } = P.findText;
+    for (let at = text.indexOf(q); at !== -1; at = text.indexOf(q, at + q.length)) {
+      const s = spot(where, at, q.length);
+      const els = s.boxes.map((b) => {
+        const el = document.createElement('div');
+        el.className = 'mb-pdf-hit';
+        placeBox(el, b.rect, 0.002);
+        P.pages[b.page - 1].box.appendChild(el);
+        return el;
+      });
+      P.hits.push({ page: s.page, top: s.top, els });
+    }
+    return P.hits;
+  };
+
+  BK.pdfShowHit = function (index, jump) {
+    P.hits.forEach((h) => h.els.forEach((el) => el.classList.remove('mb-current')));
+    const hit = P.hits[index];
+    if (!hit) return;
+    hit.els.forEach((el) => el.classList.add('mb-current'));
+    if (!jump) return;
+    // 放到畫面中間，跟心得的搜尋一樣
+    const rect = P.pages[hit.page - 1].box.getBoundingClientRect();
+    window.scrollTo({ top: Math.max(0, window.scrollY + rect.top + hit.top * rect.height - window.innerHeight / 2),
+      behavior: 'smooth' });
+  };
+
+  BK.pdfClearHits = function () {
+    P.hits.forEach((h) => h.els.forEach((el) => el.remove()));
+    P.hits = [];
+  };
+
   /* 書籤的目的地：具名的先查表；第一個元素是頁的參照（或頁碼），XYZ／FitH 帶著頁內高度 */
   async function resolveDest(doc, dest) {
     try {
@@ -333,18 +376,22 @@
   function flashBox(p, rect, top) {
     const band = document.createElement('div');
     band.className = 'mb-pdf-flash mb-sync-flash';
+    // 字框四周留一點邊，閃起來才不會貼著字
     if (rect) {
-      // 字框四周留一點邊，閃起來才不會貼著字
-      const pad = 0.006;
-      band.style.left = (rect.left - pad) * 100 + '%';
-      band.style.width = (rect.right - rect.left + pad * 2) * 100 + '%';
-      band.style.top = (rect.top - pad) * 100 + '%';
-      band.style.height = (rect.bottom - rect.top + pad * 2) * 100 + '%';
+      placeBox(band, rect, 0.006);
     } else {
       band.style.top = top * 100 + '%';
     }
     p.box.appendChild(band);
     band.addEventListener('animationend', () => band.remove());
+  }
+
+  /* 把元素放到頁內某個框（頁的比例）上，四周多留 pad */
+  function placeBox(el, rect, pad) {
+    el.style.left = (rect.left - pad) * 100 + '%';
+    el.style.width = (rect.right - rect.left + pad * 2) * 100 + '%';
+    el.style.top = (rect.top - pad) * 100 + '%';
+    el.style.height = (rect.bottom - rect.top + pad * 2) * 100 + '%';
   }
 
   /* 下拉選單或側欄選了某一章：捲到書籤指的地方，頂端留一點空 */
@@ -383,6 +430,8 @@
     if (!hasText && announce) MB.toast('這份 PDF 沒有文字，不能標記與搜尋');
     P.near.forEach(drawText);
     flushPendingSync();
+    // 全文還沒抽完就按了搜尋：那時一筆都找不到，抽完重找
+    I().rerunFind();
   }
 
   /* 每頁平均不到這麼多字（不算空白）就當作沒有文字層。實測每頁一張圖的書抽到 0 字，

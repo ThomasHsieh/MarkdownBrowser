@@ -497,6 +497,7 @@ const findCount = document.getElementById('find-count');
 const findState = { query: '', hits: [], index: -1 };
 
 function clearHits() {
+  if (window.MBBook && window.MBBook.pdf) window.MBBook.pdfClearHits();
   content.querySelectorAll('mark.mb-hit').forEach((m) => {
     const parent = m.parentNode;
     parent.replaceChild(document.createTextNode(m.textContent), m);
@@ -511,6 +512,15 @@ function runFind(query, jump) {
   findState.query = query;
   if (!query) {
     findCount.textContent = '0／0';
+    return;
+  }
+
+  // PDF 的字是 canvas 畫的，命中位置由 bookpdf.js 從全文算、疊框顯示
+  const book = window.MBBook;
+  if (book && book.pdf) {
+    findState.hits = book.pdfFindAll(query);
+    if (findState.hits.length) { findState.index = 0; highlightCurrent(jump !== false); }
+    else findCount.textContent = '0／0';
     return;
   }
 
@@ -559,6 +569,12 @@ function runFind(query, jump) {
 }
 
 function highlightCurrent(jump) {
+  const book = window.MBBook;
+  if (book && book.pdf) {
+    book.pdfShowHit(findState.index, jump);
+    findCount.textContent = `${findState.index + 1}／${findState.hits.length}`;
+    return;
+  }
   findState.hits.forEach((m) => m.classList.remove('mb-current'));
   const hit = findState.hits[findState.index];
   if (!hit) return;

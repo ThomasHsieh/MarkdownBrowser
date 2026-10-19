@@ -611,6 +611,16 @@ mark.mb-hl .mb-b { color: var(--hl-accent); }
   user-select: none;
 }
 .mb-pdf-page .textLayer.selecting .endOfContent { top: 0; }
+/* 搜尋命中：顏色同心得的 mark.mb-hit。multiply 疊在頁面上，底下的黑字照樣是黑的 */
+.mb-pdf-hit {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+  border-radius: 2px;
+  background: rgba(221, 152, 83, 0.35);
+}
+.mb-pdf-hit.mb-current { background: var(--accent); }
 /* 同步落點的閃示：從書籤指的高度往下一段（章名通常就在這裡）。multiply 讓底下的字照樣看得到 */
 .mb-pdf-flash {
   position: absolute;
