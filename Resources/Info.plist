@@ -134,6 +134,23 @@
 				<string>epub</string>
 			</array>
 		</dict>
+		<!-- PDF 同樣只進「打開方式」，不搶預覽程式（docs/SPEC.md 13.13）。 -->
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>PDF 文件</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.adobe.pdf</string>
+			</array>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>pdf</string>
+			</array>
+		</dict>
 		<dict>
 			<key>CFBundleTypeName</key>
 			<string>純文字</string>

@@ -318,7 +318,7 @@ final class DocumentState: PaneDocument {
     /// 這是使用者指定的開檔（選單、Finder、側欄），開的那一邊成為主角。
     func open(_ url: URL) {
         let resolved = url.resolvingSymlinksInPath()
-        let side: PaneSide = BookPairing.isEpub(resolved) ? .book : .note
+        let side: PaneSide = BookPairing.isBook(resolved) ? .book : .note
         if side == .book { openBookAsPrimary(resolved) } else { openNote(resolved, primary: true) }
         focusAfterOpen(side)
     }
@@ -367,7 +367,7 @@ final class DocumentState: PaneDocument {
 
     func openPanel() {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.plainText, .epub]
+        panel.allowedContentTypes = [.plainText, .epub, .pdf]
         panel.allowsOtherFileTypes = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
@@ -450,7 +450,7 @@ final class DocumentState: PaneDocument {
     func bookDidOpen() {
         guard let bookURL = book.documentURL else { return }
         if documentURL == nil {
-            pairedNoteLocation = BookPairing.noteLocation(forBook: bookURL, title: book.epub?.title ?? "")
+            pairedNoteLocation = BookPairing.noteLocation(forBook: bookURL, title: book.title ?? "")
         }
         rebuildChapterMap()
     }
@@ -460,7 +460,7 @@ final class DocumentState: PaneDocument {
         pairedNoteLocation = nil
     }
 
-    /// 選單、Finder 打開的是 EPUB：書是主角。
+    /// 選單、Finder 打開的是 EPUB 或 PDF：書是主角。
     private func openBookAsPrimary(_ url: URL) {
         primarySide = .book
         // 打開的就是目前心得配對的那本書：心得留著
@@ -856,7 +856,7 @@ protocol WebBridge: AnyObject {
                          completion: @escaping ([(name: String, matched: Int, total: Int)]) -> Void)
 
     // 書與同步（docs/SPEC.md 13.10）
-    func setBook(_ book: EpubBook?)
+    func setBook(_ book: BookResources?)
     func renderBook(_ payload: [String: Any], keepScroll: Bool, highlights: [String: Any]?)
     func renderBookError(_ text: String)
     func scrollToChapter(_ index: Int)

@@ -5,7 +5,7 @@ import Foundation
 ///
 /// 標記、sidecar、檔案監聽全部沿用 `PaneDocument`，跟心得那欄同一套規則 ——
 /// sidecar 就是 EPUB 旁邊的 `<EPUB 檔名>_highlights.json`。這裡只多了「怎麼把一本
-/// EPUB 送給網頁端」與閱讀位置。
+/// EPUB 送給網頁端」與閱讀位置。PDF 也開在這一欄（docs/SPEC.md 13.13），兩者擇一。
 @MainActor
 final class BookPane: PaneDocument {
 
@@ -13,12 +13,16 @@ final class BookPane: PaneDocument {
     weak var host: DocumentState?
 
     @Published private(set) var epub: EpubBook?
+    @Published private(set) var pdf: PdfBook?
     @Published private(set) var loadError: String?
 
     /// 目前所在章（`EpubBook.toc` 的索引），網頁端捲動時回報。
     @Published private(set) var currentChapter: Int?
 
     override var windowState: DocumentState? { host }
+
+    /// 書名：EPUB 的 `dc:title`、PDF 的 Title 中繼資料（沒有就是檔名）
+    var title: String? { epub?.title ?? pdf?.title }
 
     // MARK: - 開檔
 
@@ -30,6 +34,7 @@ final class BookPane: PaneDocument {
 
     override func didUnload() {
         epub = nil
+        pdf = nil
         loadError = nil
         currentChapter = nil
         bridge?.setBook(nil)
@@ -45,11 +50,12 @@ final class BookPane: PaneDocument {
     }
 
     private func parse(_ url: URL) {
+        epub = nil
+        pdf = nil
         do {
-            epub = try EpubBook(url: url)
+            if BookPairing.isPDF(url) { pdf = try PdfBook(url: url) } else { epub = try EpubBook(url: url) }
             loadError = nil
         } catch {
-            epub = nil
             loadError = error.localizedDescription
         }
     }
@@ -58,6 +64,11 @@ final class BookPane: PaneDocument {
         guard let bridge else { return false }
         // 重載：翻譯 repo 重新打包了 EPUB，整本重新解析
         if keepScroll { parse(url); host?.bookDidOpen() }
+        if let pdf {
+            bridge.setBook(pdf)
+            bridge.renderBook(payload(for: pdf, url: url), keepScroll: keepScroll, highlights: highlights)
+            return true
+        }
         guard let epub else {
             bridge.renderBookError(loadError ?? "無法開啟這個 EPUB")
             return false
@@ -104,6 +115,16 @@ final class BookPane: PaneDocument {
             payload["css"] = css
         }
         return payload
+    }
+
+    /// PDF 只送書名與位置；頁面、文字、書籤都由網頁端的 pdf.js 從 `mbres://book/` 讀
+    private func payload(for pdf: PdfBook, url: URL) -> [String: Any] {
+        [
+            "title": pdf.title,
+            "pdf": PdfBook.resourcePath,
+            "toc": [],
+            "position": AppSettings.shared.bookPosition(for: url) ?? NSNull(),
+        ]
     }
 
     // MARK: - 網頁端的互動

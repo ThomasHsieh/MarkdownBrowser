@@ -7,6 +7,8 @@
  *
  * 固定版面的書：每頁是一個 iframe（mbres://book/…），等比縮放、翻頁式顯示，
  * 不套我們的樣式、不能標記。
+ *
+ * PDF：交給 bookpdf.js（docs/SPEC.md 13.13），這裡只在幾個分岔點轉過去。
  */
 
 'use strict';
@@ -20,6 +22,7 @@
   const BK = {
     active: false,
     fixed: false,
+    pdf: false,
     toc: [],
     markers: [],          // [{el, index, level}]，依文件順序，標出每個目錄項目從哪裡開始
     chapter: null,
@@ -28,16 +31,19 @@
   };
   window.MBBook = BK;
   // 翻頁模式只用在可重排的書；心得那欄（BK.active 為假）一律捲動
-  Object.defineProperty(BK, 'paged', { get: () => BK.active && !BK.fixed && BK.layout !== 'scroll' });
+  // PDF 目前只有捲動模式
+  Object.defineProperty(BK, 'paged', { get: () => BK.active && !BK.fixed && !BK.pdf && BK.layout !== 'scroll' });
 
   BK.deactivate = function () {
     if (!BK.active) return;
     BK.active = false;
     BK.fixed = false;
+    if (BK.pdf) BK.pdfTeardown();
+    BK.pdf = false;
     BK.toc = [];
     BK.markers = [];
     BK.chapter = null;
-    document.documentElement.classList.remove('mb-book-mode', 'mb-fixed-mode', 'mb-paged', 'mb-double');
+    document.documentElement.classList.remove('mb-book-mode', 'mb-fixed-mode', 'mb-pdf-mode', 'mb-paged', 'mb-double');
     hideFullpage();
     content.classList.remove('mb-book');
     closePopover();
@@ -81,6 +87,8 @@
   MB.renderBook = function (payload, opts) {
     opts = opts || {};
     const hl = window.MBHighlights;
+    if (payload.pdf) { renderPdf(payload, opts); return; }
+    if (BK.pdf) BK.deactivate();
     const anchor = opts.keepScroll ? captureBookAnchor() : null;
     const kept = hl && BK.active && !BK.fixed ? hl.beforeRender() : null;
 
@@ -130,6 +138,26 @@
   };
 
 
+
+  function renderPdf(payload, opts) {
+    // 重載同一份 PDF 時 bookpdf.js 要先記下位置，所以不走 deactivate（它會把頁面收掉）
+    if (BK.active && !BK.pdf) BK.deactivate();
+    closePopover();
+    I().closeFind();
+    I().markRendered();
+    BK.active = true;
+    BK.fixed = false;
+    BK.pdf = true;
+    BK.toc = [];
+    BK.markers = [];
+    BK.chapter = null;
+    const html = document.documentElement;
+    html.classList.add('mb-book-mode', 'mb-pdf-mode');
+    html.classList.remove('mb-fixed-mode', 'mb-paged', 'mb-double');
+    hideFullpage();
+    content.classList.add('mb-book');
+    BK.renderPdf(payload, opts);
+  }
 
   MB.renderBookError = function (text) {
     BK.deactivate();
@@ -506,6 +534,7 @@
   };
 
   BK.syncTo = function (req) {
+    if (BK.pdf) return;
     BK.navigatedAt = Date.now();
     if (req.quote) { syncQuote(req); return; }
     if (BK.fixed) { gotoChapterPage((req.chapters || [])[0], true); return; }
@@ -678,6 +707,7 @@
   }
 
   MB.scrollToChapter = function (index) {
+    if (BK.pdf) return;
     BK.navigatedAt = Date.now();
     if (BK.fixed) { gotoChapterPage(index, false); return; }
     const range = chapterRange(index);
@@ -799,8 +829,8 @@
   }
 
   // 給 app.js 的「寬度改變時守住閱讀位置」用
-  BK.captureAnchor = () => captureBookAnchor();
-  BK.restoreAnchor = (a) => restoreBookAnchor(a);
+  BK.captureAnchor = () => BK.pdf ? BK.pdfAnchor() : captureBookAnchor();
+  BK.restoreAnchor = (a) => BK.pdf ? BK.pdfRestore(a) : restoreBookAnchor(a);
 
   function currentChapter() {
     let found = null;
@@ -826,6 +856,12 @@
     if (!BK.active) return;
     if (BK.fixed) {
       toSwift({ type: 'bookPosition', chapter: chapterOfPage(fx.page), position: { page: fx.page }, turned });
+      return;
+    }
+    if (BK.pdf) {
+      const msg = { type: 'bookPosition', chapter: null, turned: false };
+      if (!initial) msg.position = BK.pdfAnchor() || {};
+      toSwift(msg);
       return;
     }
     BK.chapter = currentChapter();
@@ -1091,7 +1127,7 @@
   MB.setBookLayout = function (mode) {
     const anchor = BK.active && !BK.fixed ? captureBookAnchor() : null;
     BK.layout = mode;
-    if (!BK.active) return;
+    if (!BK.active || BK.pdf) return;
     if (BK.fixed) { layoutFixed(); reportPosition(false); return; }
     applyLayout();
     requestAnimationFrame(() => {

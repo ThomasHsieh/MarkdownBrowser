@@ -228,7 +228,7 @@ struct WebPane: NSViewRepresentable {
 
         // MARK: 書與同步
 
-        func setBook(_ book: EpubBook?) {
+        func setBook(_ book: BookResources?) {
             schemeHandler.book = book
         }
 

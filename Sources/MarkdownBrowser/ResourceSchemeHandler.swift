@@ -10,7 +10,10 @@ import WebKit
 ///
 ///   mbres://app/…       → Contents/Resources/web/…
 ///   mbres://doc/…       → 目前文件所在資料夾
-///   mbres://book/…      → 書那欄的 EPUB 裡面（直接從 ZIP 讀，不解壓）
+///   mbres://book/…      → 書那欄的 EPUB 裡面（直接從 ZIP 讀，不解壓），或書那欄的 PDF
+///
+/// book 那支回 `HTTPURLResponse` 並帶 CORS：pdf.js 要看狀態碼，網頁本身在 `mbres://app`，
+/// 對 `mbres://book` 是跨來源（docs/SPEC.md 13.13）
 final class ResourceSchemeHandler: NSObject, WKURLSchemeHandler {
 
     static let scheme = "mbres"
@@ -20,7 +23,7 @@ final class ResourceSchemeHandler: NSObject, WKURLSchemeHandler {
     var documentDirectory: URL?
 
     /// 書那欄的書。
-    var book: EpubBook?
+    var book: BookResources?
 
     func webView(_ webView: WKWebView, start task: WKURLSchemeTask) {
         guard let url = task.request.url, let host = url.host else {

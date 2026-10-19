@@ -534,6 +534,28 @@ mark.mb-hl .mb-b { color: var(--hl-accent); }
 }
 .mb-fixed-mode body { overflow: hidden; }
 
+/* ── PDF（docs/SPEC.md 13.13）：照原樣顯示，捲動模式頁寬貼齊欄寬 ── */
+.mb-pdf-mode #content { padding: 0; }
+#mb-pdf {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  padding: 12px 12px 40vh;
+}
+.mb-pdf-page {
+  position: relative;
+  width: 100%;
+  background: #fff;       /* 還沒畫好的頁先是白的，跟畫好之後一樣，捲動時不會一黑一白地閃 */
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+.mb-pdf-page canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
 /* ── 對照同步（docs/SPEC.md 13.6）──────────────────────── */
 
 /* 被帶動的那一欄，目標標題閃一下底色 */

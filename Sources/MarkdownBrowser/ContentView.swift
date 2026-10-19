@@ -24,7 +24,7 @@ struct ContentView: View {
 
     private var title: String {
         if let url = state.documentURL { return url.lastPathComponent }
-        if let book = state.book.epub { return book.title }
+        if let title = state.book.title { return title }
         return "MarkdownBrowser"
     }
 

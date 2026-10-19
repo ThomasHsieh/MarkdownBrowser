@@ -10,6 +10,9 @@ enum BookPairing {
     static let markdownExtensions: Set<String> = ["md", "markdown", "mdown", "mkd", "mdwn"]
 
     static func isEpub(_ url: URL) -> Bool { url.pathExtension.lowercased() == "epub" }
+    static func isPDF(_ url: URL) -> Bool { url.pathExtension.lowercased() == "pdf" }
+    /// 開在書那欄的檔
+    static func isBook(_ url: URL) -> Bool { isEpub(url) || isPDF(url) }
 
     static func isMarkdown(_ url: URL) -> Bool { markdownExtensions.contains(url.pathExtension.lowercased()) }
 
