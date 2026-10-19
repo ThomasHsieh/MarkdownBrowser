@@ -1267,6 +1267,14 @@ EPUB（13.9）一樣**不套我們的樣式**，PDF 裡的粗體照樣加粗 —
 每頁是 canvas 加上一層透明的**文字層**（pdf.js 的 text layer），文字層用來選字、複製、
 搜尋、標記與引文閃示。
 
+**PDF 走 `mbres://book/`**，跟 EPUB 共用書那欄的來源，回 `HTTPURLResponse`（狀態碼 200）並帶
+`Access-Control-Allow-Origin`。不走 `mbres://doc/`：那支回的是沒有狀態碼的 `URLResponse`，
+pdf.js 當成失敗（狀態 0）；網頁本身在 `mbres://app`，對 `mbres://doc` 是跨來源，`fetch` 沒有 CORS
+標頭也被擋（實測 `Load failed`）。不支援 Range，pdf.js 整份讀進來，本機檔案不影響。
+
+worker 從 `mbres://app/vendor/pdfjs/pdf.worker.min.mjs` 以 module worker 載入，實測是真的背景
+`Worker`，不是退回主執行緒的假 worker。實測 25 頁論文：開檔 26 ms、全文抽完 90 ms。
+
 **文字與畫面分開**：
 
 - 開檔時用 `getTextContent()` 把每一頁的文字抽出來，依頁序串成**全文**。標記比對、引文同步、
@@ -1361,6 +1369,5 @@ EPUB（13.9）一樣**不套我們的樣式**，PDF 裡的粗體照樣加粗 —
 
 #### 待實測
 
-- pdf.js 的 worker 能不能從 `mbres://` 載入（module worker 的來源限制）
 - `pageColors` 會不會連點陣圖也套色
 - 雙欄論文的文字層順序是否照閱讀順序，跨欄選取會不會選到另一欄
