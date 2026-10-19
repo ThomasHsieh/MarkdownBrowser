@@ -33,6 +33,7 @@
     pages: [],       // [{w, h, box, canvas, task, drawnWidth, layer}]
     observer: null,
     near: new Set(), // 在畫面附近、該畫的頁
+    pendingSync: null, // 書籤還沒讀好時送來的同步要求，讀好再做
     toc: [],         // 書籤攤平：[{label, level, page, ratio}]，page 從 1 開始；對不到頁的 page 為 null
     text: null,      // 全文，抽完才有：{pages: [textContent…], strings: [每頁字串], full, starts: [每頁在 full 的起點], hasText}
   };
@@ -101,6 +102,8 @@
     P.near.clear();
     P.text = null;
     P.toc = [];
+    P.pendingSync = null;
+    P.tocLoaded = false;
     if (P.doc) P.doc.destroy();
     P.doc = null;
   }
@@ -126,9 +129,112 @@
       toc.push({ label: normalizeText(item.label), level: item.level, page: at ? at.page : null, ratio: at ? at.ratio : 0 });
     }
     P.toc = toc;
+    P.tocLoaded = true;
     I().toSwift({ type: 'bookToc', toc: toc.map(({ label, level }) => ({ label, level })) });
+    flushPendingSync();
     // 開檔時回報的位置還不知道章，書籤讀好再報一次
     I().toSwift({ type: 'bookPosition', chapter: BK.pdfChapter(), turned: false });
+  }
+
+  /* 心得帶動書（docs/SPEC.md 13.13）：同步只到章，捲到那一章的書籤。
+   * 換心得或剛開檔時，Swift 送來的同步可能比書籤先到，先存著 */
+  BK.pdfSyncTo = function (req) {
+    // 要搜全文的同步還得等全文抽完
+    const wantsText = req.text && !req.quiet && P.text == null;
+    if (!P.tocLoaded || wantsText) { P.pendingSync = req; return; }
+    const chapter = (req.chapters || []).find((i) => P.toc[i] && P.toc[i].page != null);
+    if (chapter == null) {
+      if (!P.toc.length) MB.toast('這份 PDF 沒有目錄');
+      return;
+    }
+    // 點的是小節標題：拿標題文字去這一章的全文找，跟 EPUB「標題對不到」的退路一樣（docs/SPEC.md 13.6）。
+    // 點的是章名（quiet）就不找，章首正是要去的地方
+    if (req.text && !req.quiet && P.text && P.text.hasText) {
+      const hit = keywordInChapter(chapter, req.text);
+      if (hit) { land(hit, req, `依關鍵詞「${hit.word}」對到內文`); return; }
+    }
+    const t = P.toc[chapter];
+    // 引文比對還沒做：先到那一章開頭
+    const miss = req.quote ? 'PDF 還不能比對引文，已跳到這一章開頭'
+      : req.text && !req.quiet ? '找不到對應小節，已跳到章首' : null;
+    land({ page: t.page, top: t.ratio, rect: null }, req, miss);
+  };
+
+  function flushPendingSync() {
+    if (!P.pendingSync) return;
+    const req = P.pendingSync;
+    P.pendingSync = null;
+    BK.pdfSyncTo(req);
+  }
+
+  /* 這一章：從它的書籤所在頁，到下一個有頁碼的書籤所在頁（含）。頁內的起點不細分 —— 前一章的
+   * 結尾若跟這章章首同一頁，多搜那半頁無妨 */
+  function chapterPages(index) {
+    const start = P.toc[index].page;
+    let end = P.pages.length;
+    for (let i = index + 1; i < P.toc.length; i++) {
+      if (P.toc[i].page != null && P.toc[i].page > start) { end = P.toc[i].page; break; }
+    }
+    return [start, end];
+  }
+
+  /* 標題裡在這一章全文出現的最長一段 → 落點（頁、頁內高度、那幾個字的框） */
+  function keywordInChapter(index, heading) {
+    const [from, to] = chapterPages(index);
+    let text = '';
+    const where = [];               // text 第 k 個字 → [頁 index, 那頁字串裡的位置]
+    for (let pg = from - 1; pg < to; pg++) {
+      const s = P.text.strings[pg];
+      for (let i = 0; i < s.length; i++) {
+        if (/\s/.test(s[i])) continue;
+        text += s[i];
+        where.push([pg, i]);
+      }
+    }
+    const word = BK.longestKeyword(text, heading);
+    if (!word) return null;
+    const at = text.indexOf(word);
+    const [pg, startOff] = where[at];
+    const [endPg, endOff] = where[at + word.length - 1];
+    const rect = textRect(pg, startOff, endPg === pg ? endOff : P.text.strings[pg].length - 1);
+    return { word, page: pg + 1, top: rect ? rect.top : 0, rect };
+  }
+
+  /* 頁字串裡 [a, b] 這段字所在 textContent 項目的外框，以頁的比例表示（0～1，由上往下） */
+  function textRect(pg, a, b) {
+    const items = P.text.pages[pg].items;
+    const p = P.pages[pg];
+    let off = 0, box = null;
+    for (const item of items) {
+      const len = (item.str || '').length + (item.hasEOL ? 1 : 0);
+      const s = off, e = off + len - 1;
+      off += len;
+      if (e < a || s > b || !item.str || !item.transform) continue;
+      const [, , , d, x, y] = item.transform;
+      const h = item.height || Math.abs(d);
+      // 一個項目常是半行字：照字數比例裁到真正那幾個字（中文等寬，誤差在一兩個字內）
+      const n = item.str.length;
+      const from = (Math.max(a, s) - s) / n, to = Math.min(n, Math.min(b, e) - s + 1) / n;
+      const r = { left: (x + item.width * from) / p.w, right: (x + item.width * to) / p.w,
+        top: 1 - (y + h) / p.h, bottom: 1 - y / p.h };
+      box = box ? { left: Math.min(box.left, r.left), right: Math.max(box.right, r.right),
+        top: Math.min(box.top, r.top), bottom: Math.max(box.bottom, r.bottom) } : r;
+    }
+    return box;
+  }
+
+  /* 捲到落點、閃一下。有字框就閃那幾個字，沒有（章首）就閃書籤底下一條。
+   * tab 模式下書在背景（background）：先捲好，切過去時才閃，同 EPUB */
+  function land(at, req, note) {
+    const p = P.pages[at.page - 1];
+    if (!p) return;
+    const rect = p.box.getBoundingClientRect();
+    const background = !!req.background;
+    window.scrollTo({ top: Math.max(0, window.scrollY + rect.top + at.top * rect.height - (at.rect ? 80 : 12)),
+      behavior: background ? 'auto' : 'smooth' });
+    const show = () => { flashBox(p, at.rect, at.top); if (note) MB.toast(note); };
+    if (background) I().setPendingSync(show);
+    else setTimeout(show, 450);
   }
 
   /* 書籤的目的地：具名的先查表；第一個元素是頁的參照（或頁碼），XYZ／FitH 帶著頁內高度 */
@@ -166,6 +272,25 @@
     return found === -1 ? null : found;
   };
 
+  /* 被心得帶過來時在落點閃一條：書本來就停在那一章開頭時畫面不會動，不閃就看不出有反應。
+   * 蓋在頁框上一層，不動 canvas 與文字層；顏色與節奏同 EPUB 的 .mb-sync-flash */
+  function flashBox(p, rect, top) {
+    const band = document.createElement('div');
+    band.className = 'mb-pdf-flash mb-sync-flash';
+    if (rect) {
+      // 字框四周留一點邊，閃起來才不會貼著字
+      const pad = 0.006;
+      band.style.left = (rect.left - pad) * 100 + '%';
+      band.style.width = (rect.right - rect.left + pad * 2) * 100 + '%';
+      band.style.top = (rect.top - pad) * 100 + '%';
+      band.style.height = (rect.bottom - rect.top + pad * 2) * 100 + '%';
+    } else {
+      band.style.top = top * 100 + '%';
+    }
+    p.box.appendChild(band);
+    band.addEventListener('animationend', () => band.remove());
+  }
+
   /* 下拉選單或側欄選了某一章：捲到書籤指的地方，頂端留一點空 */
   BK.pdfScrollToChapter = function (index) {
     const t = P.toc[index];
@@ -201,6 +326,7 @@
     // 重載（檔案被換掉）不再講一次
     if (!hasText && announce) MB.toast('這份 PDF 沒有文字，不能標記與搜尋');
     P.near.forEach(drawText);
+    flushPendingSync();
   }
 
   /* 每頁平均不到這麼多字（不算空白）就當作沒有文字層。實測每頁一張圖的書抽到 0 字，

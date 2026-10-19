@@ -38,32 +38,35 @@ enum BookPairing {
            FileManager.default.fileExists(atPath: manual) {
             return .found(URL(fileURLWithPath: manual))
         }
-        let library = libraryFolder(above: folder)
+        let libraries = libraryFolders(above: folder)
+        let libraryPaths = Set(libraries.map(\.path))
 
         // 心得 h1 的《》書名優先；資料夾名稱（書 A/）當後備
         let noteTitle = noteBookTitle(note)
-        var keys: [String] = []
-        if let noteTitle { keys.append(EpubBook.titleKey(noteTitle)) }
-        if folder.path != library?.path { keys.append(EpubBook.titleKey(folder.lastPathComponent)) }
-        keys = keys.filter { !$0.isEmpty }
-        let extras = AppSettings.shared.libraryFolders.filter { $0.path != library?.path }
-        let searched = (library.map { [$0] } ?? []) + extras
-        guard !keys.isEmpty else { return .notFound(title: nil, searched: searched) }
+        let titleKey = noteTitle.map(EpubBook.titleKey) ?? ""
+        let folderKey = EpubBook.titleKey(folder.lastPathComponent)
+        let extras = AppSettings.shared.libraryFolders.filter { !libraryPaths.contains($0.path) }
+        let searched = libraries + extras
+        guard !titleKey.isEmpty || !folderKey.isEmpty else { return .notFound(title: nil, searched: searched) }
         let title = noteTitle ?? folder.lastPathComponent
 
-        if let library {
-            let books = epubs(in: library)
-            // dc:title 對不到才退回比對檔名
-            if let hit = books.first(where: { keys.contains(EpubBook.titleKey(self.title(of: $0))) }) { return .found(hit) }
-            if let hit = books.first(where: { keys.contains(fileKey($0)) }) { return .found(hit) }
+        // 往上找書庫：含 .epub 或 .pdf 的每一層都試，這層對不到就繼續往上 ——
+        // 心得資料夾裡常有附件 PDF，停在那層會擋住上面真正的書庫（docs/SPEC.md 13.2 第 3 步）
+        for library in libraries {
+            // 資料夾名稱只在心得資料夾不是書庫本身時才算（書庫那層的名稱不是書名）
+            let keys = [titleKey, library.path == folder.path ? "" : folderKey].filter { !$0.isEmpty }
+            if let hit = match(keys: keys, in: library) { return .found(hit) }
         }
+        let keys = [titleKey, folderKey].filter { !$0.isEmpty }
 
-        // 額外書庫：只比檔名，不打開 EPUB（雲端硬碟上的佔位檔會被整批下載）
-        let all = extras.flatMap { LibraryIndex.epubs(under: $0) }
+        // 額外書庫：只比檔名，不打開書（雲端硬碟上的佔位檔會被整批下載）
+        let all = extras.flatMap { LibraryIndex.books(under: $0) }
         let exact = all.filter { keys.contains(fileKey($0)) }
-        if exact.count == 1 {
-            AppSettings.shared.setAutoBookPair(folder: folder, book: exact[0])
-            return .found(exact[0])
+        // 同一本書 EPUB 與 PDF 都有時 EPUB 優先（docs/SPEC.md 13.13）
+        let preferred = exact.contains(where: isEpub) ? exact.filter(isEpub) : exact
+        if preferred.count == 1 {
+            AppSettings.shared.setAutoBookPair(folder: folder, book: preferred[0])
+            return .found(preferred[0])
         }
         if !exact.isEmpty { return .candidates(exact, title: title, prefix: false) }
         // 檔名常把副標用兩個空白隔開，切不出短書名。開頭相符會多對到不相干的書，只當候選
@@ -72,8 +75,21 @@ enum BookPairing {
         return .notFound(title: title, searched: searched)
     }
 
-    static func fileKey(_ epub: URL) -> String {
-        EpubBook.titleKey(epub.deletingPathExtension().lastPathComponent)
+    /// 書庫那一層：EPUB 先比 `dc:title`、再比檔名；都對不到才看 PDF（同一層 EPUB 優先），
+    /// PDF 的 Title 中繼資料或檔名任一相符就算（docs/SPEC.md 13.13）
+    private static func match(keys: [String], in library: URL) -> URL? {
+        guard !keys.isEmpty else { return nil }
+        let files = books(in: library)
+        let epubs = files.filter(isEpub)
+        if let hit = epubs.first(where: { keys.contains(EpubBook.titleKey(self.title(of: $0))) }) { return hit }
+        if let hit = epubs.first(where: { keys.contains(fileKey($0)) }) { return hit }
+        return files.filter(isPDF).first { pdf in
+            keys.contains(fileKey(pdf)) || keys.contains(EpubBook.titleKey(self.title(of: pdf)))
+        }
+    }
+
+    static func fileKey(_ book: URL) -> String {
+        EpubBook.titleKey(book.deletingPathExtension().lastPathComponent)
     }
 
     /// 心得 h1 裡的書名。h1 可能是「閱讀筆記：《書 B》進度」，所以有《》就只取裡面。
@@ -85,33 +101,36 @@ enum BookPairing {
         return h1
     }
 
-    /// 從心得所在資料夾往上找，第一層含有 `.epub` 的資料夾就是書庫位置。
+    /// 從心得所在資料夾往上找，含有 `.epub` 或 `.pdf` 的每一層都是書庫候選，由近到遠。
     /// 最多往上四層、不越過家目錄，避免一路掃到根目錄。
-    static func libraryFolder(above folder: URL) -> URL? {
+    static func libraryFolders(above folder: URL) -> [URL] {
         let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path
         var current = folder.standardizedFileURL
+        var found: [URL] = []
         for _ in 0..<5 {
-            if !epubs(in: current).isEmpty { return current }
-            if current.path == home || current.path == "/" { return nil }
+            if !books(in: current).isEmpty { found.append(current) }
+            if current.path == home || current.path == "/" { break }
             current = current.deletingLastPathComponent()
         }
-        return nil
+        return found
     }
 
-    private static func epubs(in folder: URL) -> [URL] {
+    private static func books(in folder: URL) -> [URL] {
         let files = (try? FileManager.default.contentsOfDirectory(
             at: folder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
-        return files.filter(isEpub).sorted { $0.lastPathComponent < $1.lastPathComponent }
+        return files.filter(isBook).sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
 
-    /// `dc:title` 的快取。每次開心得都要比對整個書庫的書名，打開十幾個 ZIP 讀 OPF 不划算。
+    /// 書名（EPUB 的 `dc:title`、PDF 的 Title 中繼資料，都沒有就是檔名）的快取。
+    /// 每次開心得都要比對整個書庫的書名，打開十幾個 ZIP 讀 OPF 不划算。
     private static var titleCache: [String: (date: Date, title: String)] = [:]
 
-    static func title(of epub: URL) -> String {
-        let date = (try? epub.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
-        if let hit = titleCache[epub.path], hit.date == date { return hit.title }
-        let title = (try? EpubBook(url: epub))?.title ?? epub.deletingPathExtension().lastPathComponent
-        titleCache[epub.path] = (date, title)
+    static func title(of book: URL) -> String {
+        let date = (try? book.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+        if let hit = titleCache[book.path], hit.date == date { return hit.title }
+        let parsed = isPDF(book) ? (try? PdfBook(url: book))?.title : (try? EpubBook(url: book))?.title
+        let title = parsed ?? book.deletingPathExtension().lastPathComponent
+        titleCache[book.path] = (date, title)
         return title
     }
 
@@ -197,16 +216,17 @@ enum LibraryIndex {
 
     private struct Entry {
         var folderDates: [String: Date]
-        var epubs: [URL]
+        var books: [URL]
     }
 
     private static var cache: [String: Entry] = [:]
 
-    static func epubs(under root: URL) -> [URL] {
-        if let hit = cache[root.path], isFresh(hit) { return hit.epubs }
+    /// 子樹裡所有的 EPUB 與 PDF
+    static func books(under root: URL) -> [URL] {
+        if let hit = cache[root.path], isFresh(hit) { return hit.books }
         let entry = scan(root)
         cache[root.path] = entry
-        return entry.epubs
+        return entry.books
     }
 
     private static func isFresh(_ entry: Entry) -> Bool {
@@ -217,25 +237,25 @@ enum LibraryIndex {
 
     private static func scan(_ root: URL) -> Entry {
         var dates: [String: Date] = [:]
-        var epubs: [URL] = []
-        guard let rootDate = modificationDate(of: root) else { return Entry(folderDates: [:], epubs: []) }
+        var books: [URL] = []
+        guard let rootDate = modificationDate(of: root) else { return Entry(folderDates: [:], books: []) }
         dates[root.path] = rootDate
         let keys: [URLResourceKey] = [.isDirectoryKey, .contentModificationDateKey]
         guard let walker = FileManager.default.enumerator(at: root, includingPropertiesForKeys: keys,
                                                           options: [.skipsHiddenFiles, .skipsPackageDescendants])
-        else { return Entry(folderDates: dates, epubs: []) }
+        else { return Entry(folderDates: dates, books: []) }
         for case let url as URL in walker {
             let values = try? url.resourceValues(forKeys: Set(keys))
-            if BookPairing.isEpub(url) {
-                epubs.append(url)
+            if BookPairing.isBook(url) {
+                books.append(url)
                 // 解開的 EPUB 也是資料夾，裡面不用再走
                 if values?.isDirectory == true { walker.skipDescendants() }
             } else if values?.isDirectory == true {
                 dates[url.path] = values?.contentModificationDate ?? .distantPast
             }
         }
-        epubs.sort { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
-        return Entry(folderDates: dates, epubs: epubs)
+        books.sort { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+        return Entry(folderDates: dates, books: books)
     }
 
     private static func modificationDate(of folder: URL) -> Date? {

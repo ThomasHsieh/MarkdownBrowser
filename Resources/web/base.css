@@ -611,6 +611,16 @@ mark.mb-hl .mb-b { color: var(--hl-accent); }
   user-select: none;
 }
 .mb-pdf-page .textLayer.selecting .endOfContent { top: 0; }
+/* 同步落點的閃示：從書籤指的高度往下一段（章名通常就在這裡）。multiply 讓底下的字照樣看得到 */
+.mb-pdf-flash {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 12%;
+  z-index: 2;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+}
 
 /* ── 對照同步（docs/SPEC.md 13.6）──────────────────────── */
 

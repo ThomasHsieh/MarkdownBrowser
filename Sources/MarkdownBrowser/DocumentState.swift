@@ -415,15 +415,24 @@ final class DocumentState: PaneDocument {
                 // 書剛打開：上次讀到的地方就在這一章就回到那裡，否則（包括第一次打開）
                 // 翻到心得這一章 —— 你打開第 5 章的心得，要看的是書的第 5 章
                 guard opening else { return }
-                rebuildChapterMap()
-                let savedFile = saved.flatMap(mappedChapter).flatMap { chapterMap.targets[$0]?.file }
-                if savedFile != note { syncBookToCurrentNote() }
+                // PDF 的書籤是網頁端讀出來的，還沒送到就等送到再決定（bookTocChanged）
+                if book.pdf != nil && !book.pdfTocLoaded { pendingOpenSync = (note, saved); return }
+                syncAfterOpening(note, savedChapter: saved)
             }
         } else if book.documentURL != nil, primarySide == .note {
             // 換到另一本書的心得（或沒有書的心得）：舊書收起來
             if book.documentURL != pairedBookURL || !compareEnabled { closeBook() }
         }
         rebuildChapterMap()
+    }
+
+    /// 書剛打開時翻到哪：等 PDF 書籤送來才能決定的那一次
+    private var pendingOpenSync: (note: URL, saved: Int?)?
+
+    private func syncAfterOpening(_ note: URL, savedChapter saved: Int?) {
+        rebuildChapterMap()
+        let savedFile = saved.flatMap(mappedChapter).flatMap { chapterMap.targets[$0]?.file }
+        if savedFile != note { syncBookToCurrentNote() }
     }
 
     /// 把書放進左欄。書已經開在別的視窗就搬過來（docs/SPEC.md 13.7）。
@@ -458,9 +467,15 @@ final class DocumentState: PaneDocument {
     /// PDF 的書籤是開檔之後網頁端才送來的，章節對應要重算
     func bookTocChanged() {
         rebuildChapterMap()
+        // 書剛打開時那次「書跟到目前這份心得」要等書籤才能做
+        if let pending = pendingOpenSync {
+            pendingOpenSync = nil
+            if documentURL == pending.note { syncAfterOpening(pending.note, savedChapter: pending.saved) }
+        }
     }
 
     func bookDidUnload() {
+        pendingOpenSync = nil
         chapterMap = .empty
         pairedNoteLocation = nil
     }
@@ -560,7 +575,7 @@ final class DocumentState: PaneDocument {
     func chooseBookManually() {
         guard let note = documentURL else { return }
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.epub]
+        panel.allowedContentTypes = [.epub, .pdf]
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
         panel.message = "選擇「\(note.deletingLastPathComponent().lastPathComponent)」對應的書"
@@ -596,7 +611,9 @@ final class DocumentState: PaneDocument {
             : "選一本對照，之後這個資料夾的心得都用這本。"
         let popup = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 520, height: 26), pullsDown: false)
         for book in books {
-            popup.addItem(withTitle: book.deletingPathExtension().lastPathComponent)
+            // 同一本書的 EPUB 與 PDF 檔名常一樣，標出 PDF 才分得出來
+            let name = book.deletingPathExtension().lastPathComponent
+            popup.addItem(withTitle: BookPairing.isPDF(book) ? name + "（PDF）" : name)
             popup.lastItem?.toolTip = (book.path as NSString).abbreviatingWithTildeInPath
         }
         alert.accessoryView = popup

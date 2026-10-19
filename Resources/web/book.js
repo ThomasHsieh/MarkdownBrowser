@@ -534,8 +534,8 @@
   };
 
   BK.syncTo = function (req) {
-    if (BK.pdf) return;
     BK.navigatedAt = Date.now();
+    if (BK.pdf) { BK.pdfSyncTo(req); return; }
     if (req.quote) { syncQuote(req); return; }
     if (BK.fixed) { gotoChapterPage((req.chapters || [])[0], true); return; }
     const chapters = req.chapters || [];
@@ -584,10 +584,18 @@
   }
 
   function keywordHit(ranges, heading) {
-    const h = I().normHeading(heading);
-    if (h.length < 3) return null;
+    if (I().normHeading(heading).length < 3) return null;
     const { text, where } = chapterText(ranges);
-    if (!text) return null;
+    const best = BK.longestKeyword(text, heading);
+    if (!best) return null;
+    return { word: best, range: rangeOf(where, text.indexOf(best), best.length) };
+  }
+
+  /* 心得標題裡、在 text 中出現的最長一段：至少 3 個字，頭尾不是虛字。沒有就回空字串。
+   * text 要先去掉空白。PDF 那邊也用這個（bookpdf.js） */
+  BK.longestKeyword = function (text, heading) {
+    const h = I().normHeading(heading);
+    if (h.length < 3 || !text) return '';
     let best = '';
     for (let i = 0; i < h.length; i++) {
       if (FUNCTION_CHARS.has(h[i])) continue;
@@ -597,9 +605,8 @@
         if (text.includes(sub)) { best = sub; break; }
       }
     }
-    if (best.length < 3) return null;
-    return { word: best, range: rangeOf(where, text.indexOf(best), best.length) };
-  }
+    return best.length >= 3 ? best : '';
+  };
 
   function rangeOf(where, at, length) {
     const [sn, so] = where[at];
