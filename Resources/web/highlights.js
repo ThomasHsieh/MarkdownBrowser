@@ -575,6 +575,9 @@
   content.addEventListener('mouseup', () => {
     setTimeout(() => {
       if (!idx) return;
+      // PDF 的文字層是開檔之後才畫的，文字索引對不上，連「拷貝」都會取錯字。
+      // 標記接上 PDF（docs/SPEC.md 13.13）之前不跳工具列，複製走 ⌘C
+      if (window.MBBook && window.MBBook.pdf) return;
       const s = selectionRange();
       if (!s) return;
       commitNote();

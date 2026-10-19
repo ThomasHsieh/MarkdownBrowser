@@ -3,6 +3,9 @@
  * 照原樣顯示頁面，不套我們的樣式：每頁一個 canvas，由 pdf.js 畫。PDF 從 mbres://book/ 讀，
  * worker 從 mbres://app/vendor/pdfjs/ 載入（實測是真的背景 Worker）。
  *
+ * canvas 上疊一層 pdf.js 的透明文字層，拿來選字、複製；文字層用全文那份正規化過的
+ * textContent 畫，跟全文的字一模一樣。
+ *
  * 只畫畫面附近幾頁：300 頁全部畫出來要 1～2 GB。頁框的長寬比一開始就照每頁的尺寸排好，
  * 捲軸長度與閱讀位置不必等頁面畫完；離開範圍的頁把 canvas 收掉。
  */
@@ -27,7 +30,7 @@
   const P = {
     gen: 0,          // 每次開檔加一；晚到的非同步結果對不上就丟掉
     doc: null,
-    pages: [],       // [{w, h, box, canvas, task, drawnWidth}]
+    pages: [],       // [{w, h, box, canvas, task, drawnWidth, layer}]
     observer: null,
     near: new Set(), // 在畫面附近、該畫的頁
     text: null,      // 全文，抽完才有：{pages: [textContent…], strings: [每頁字串], full, starts: [每頁在 full 的起點], hasText}
@@ -71,8 +74,9 @@
       box.className = 'mb-pdf-page';
       box.style.aspectRatio = `${s.w} / ${s.h}`;
       root.appendChild(box);
-      return { w: s.w, h: s.h, box, canvas: null, task: null, drawnWidth: 0 };
+      return { w: s.w, h: s.h, box, canvas: null, task: null, drawnWidth: 0, layer: null };
     });
+    scaleBoxes();
 
     const target = keep || payload.position;
     if (target && typeof target.page === 'number') restore(target);
@@ -125,6 +129,7 @@
     P.text = { pages, strings, full, starts, hasText };
     // 重載（檔案被換掉）不再講一次
     if (!hasText && announce) MB.toast('這份 PDF 沒有文字，不能標記與搜尋');
+    P.near.forEach(drawText);
   }
 
   /* 每頁平均不到這麼多字（不算空白）就當作沒有文字層。實測每頁一張圖的書抽到 0 字，
@@ -155,7 +160,7 @@
     for (const e of entries) {
       const index = P.pages.findIndex((p) => p.box === e.target);
       if (index === -1) continue;
-      if (e.isIntersecting) { P.near.add(index); draw(index); } else { P.near.delete(index); release(P.pages[index]); }
+      if (e.isIntersecting) { P.near.add(index); draw(index); drawText(index); } else { P.near.delete(index); release(P.pages[index]); }
     }
   }
 
@@ -191,7 +196,50 @@
     p.box.appendChild(canvas);
   }
 
+  /* 文字層的字級與位置都跟著 --total-scale-factor（CSS px／PDF pt）走，欄寬改變時只要改這個值，
+   * 不必重建。先全部量完再一起寫，免得每寫一次就逼 WebKit 重排一次 */
+  function scaleBoxes() {
+    const widths = P.pages.map((p) => p.box.clientWidth);
+    P.pages.forEach((p, i) => p.box.style.setProperty('--total-scale-factor', widths[i] / p.w));
+  }
+
+  async function drawText(index) {
+    const p = P.pages[index];
+    if (!p || p.layer || !P.text || !P.text.hasText || !P.doc) return;
+    const gen = P.gen;
+    const div = document.createElement('div');
+    div.className = 'textLayer';
+    p.layer = div;
+    const page = await P.doc.getPage(index + 1);
+    if (gen !== P.gen || p.layer !== div) return;
+    const layer = new lib.TextLayer({
+      textContentSource: P.text.pages[index],
+      container: div,
+      viewport: page.getViewport({ scale: 1 }),
+    });
+    try {
+      await layer.render();
+    } catch (e) {
+      return;
+    }
+    if (gen !== P.gen || p.layer !== div) return;
+    // 拖選拉到行與行之間的空白時，選取範圍不要跳到整頁開頭（pdf.js 檢視器的做法）
+    const end = document.createElement('div');
+    end.className = 'endOfContent';
+    div.appendChild(end);
+    p.box.appendChild(div);
+  }
+
+  content.addEventListener('mousedown', (e) => {
+    const layer = e.target.closest && e.target.closest('.textLayer');
+    if (layer) layer.classList.add('selecting');
+  });
+  document.addEventListener('mouseup', () => {
+    content.querySelectorAll('.textLayer.selecting').forEach((el) => el.classList.remove('selecting'));
+  });
+
   function release(p) {
+    if (p.layer) { p.layer.remove(); p.layer = null; }
     if (p.task) { p.task.cancel(); p.task = null; }
     if (p.canvas) {
       // WebKit 不會馬上回收 canvas 的記憶體，先把尺寸歸零
@@ -206,6 +254,7 @@
   let resizeTimer = null;
   window.addEventListener('resize', () => {
     if (!BK.active || !BK.pdf) return;
+    scaleBoxes();
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => P.near.forEach(draw), 200);
   });
