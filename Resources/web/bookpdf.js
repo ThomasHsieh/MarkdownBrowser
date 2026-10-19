@@ -30,6 +30,7 @@
     pages: [],       // [{w, h, box, canvas, task, drawnWidth}]
     observer: null,
     near: new Set(), // 在畫面附近、該畫的頁
+    text: null,      // 全文，抽完才有：{pages: [textContent…], strings: [每頁字串], full, starts: [每頁在 full 的起點]}
   };
 
   /* ── 開檔 ───────────────────────────────────────────── */
@@ -80,6 +81,9 @@
     P.observer = new IntersectionObserver(onIntersect, { rootMargin: '150% 0px' });
     P.pages.forEach((p) => P.observer.observe(p.box));
     I().toSwift({ type: 'bookPosition', chapter: null, turned: false });
+
+    // 第一頁先畫，全文在背景抽；標記、引文、搜尋都等這份
+    extractText(doc, gen);
   };
 
   function teardown() {
@@ -89,10 +93,54 @@
     P.pages.forEach(release);
     P.pages = [];
     P.near.clear();
+    P.text = null;
     if (P.doc) P.doc.destroy();
     P.doc = null;
   }
   BK.pdfTeardown = teardown;
+
+  /* ── 全文 ───────────────────────────────────────────────
+   * 每頁的 textContent 逐字正規化後留著：全文拿來比對、搜尋，之後文字層也用同一份畫，
+   * 兩邊的字一定一樣，位置才對得上（docs/SPEC.md 13.13）。 */
+
+  async function extractText(doc, gen) {
+    const pages = [], strings = [], starts = [];
+    let full = '';
+    for (let i = 1; i <= doc.numPages; i++) {
+      let tc;
+      try {
+        tc = await (await doc.getPage(i)).getTextContent();
+      } catch (e) {
+        tc = { items: [], styles: {} };
+      }
+      if (gen !== P.gen) return;
+      for (const item of tc.items) if (item.str) item.str = normalizeText(item.str);
+      const str = tc.items.map((x) => (x.str || '') + (x.hasEOL ? '\n' : '')).join('');
+      pages.push(tc);
+      strings.push(str);
+      starts.push(full.length);
+      full += str;
+    }
+    P.text = { pages, strings, full, starts };
+  }
+
+  /* calibre 加 macOS 宋體輸出的 PDF，ToUnicode 常指錯碼位：看起來是「大家」，抽出來是康熙部首
+   * 「⼤家」，問號是直排標點「︖」。只轉這幾個區段，而且轉完仍是一個字才換 —— 一對一，
+   * 文字層 span 的寬度與位置不變。不對整段做 NFKC：那會把全形「，」「？」「（」轉成半形。
+   * 直排標點 NFKC 的結果多半是半形（︖ → ?），中文內文該是全形，再轉回全形。 */
+  const SUSPECT = /[\u2E80-\u2FDF\uF900-\uFAFF\uFE10-\uFE1F\uFE30-\uFE4F\u{2F800}-\u{2FA1F}]/u;
+  const SUSPECT_ALL = new RegExp(SUSPECT.source, 'gu');
+
+  function normalizeChar(c) {
+    const n = c.normalize('NFKC');
+    if (n === c || [...n].length !== 1) return c;
+    const code = n.codePointAt(0);
+    return code >= 0x21 && code <= 0x7E ? String.fromCodePoint(code + 0xFEE0) : n;
+  }
+
+  function normalizeText(str) {
+    return SUSPECT.test(str) ? str.replace(SUSPECT_ALL, normalizeChar) : str;
+  }
 
   /* ── 畫頁 ───────────────────────────────────────────── */
 
