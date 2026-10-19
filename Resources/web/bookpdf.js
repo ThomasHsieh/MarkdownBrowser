@@ -46,10 +46,9 @@
     const gen = P.gen;
     content.innerHTML = '<div id="mb-pdf"></div>';
     I().toSwift({ type: 'outline', outline: [] });
-    // 標記還沒接上：先給標記模組一份「唯讀」的狀態，不會寫 sidecar
-    if (window.MBHighlights && opts.highlights) {
-      window.MBHighlights.afterRender(Object.assign({}, opts.highlights, { writable: false, reason: 'PDF 還不能標記' }), null);
-    }
+    // 標記要等全文抽完才能比對（docs/SPEC.md 13.13）。重載（keepScroll）不帶標記，沿用記憶體裡的
+    P.hlPayload = opts.highlights || null;
+    if (window.MBHighlights) window.MBHighlights.suspend();
 
     let doc;
     try {
@@ -101,6 +100,7 @@
     P.pages = [];
     P.near.clear();
     P.text = null;
+    P.hlPayload = null;
     P.quoteAll = null;   // 全書的引文比對用字串，第一次找全書時才建
     P.findText = null;   // 搜尋用的全書字串，第一次搜尋時才建
     P.hits = [];
@@ -252,19 +252,18 @@
     const items = P.text.pages[pg].items;
     const p = P.pages[pg];
     const lines = [];
-    let off = 0;
-    for (const item of items) {
-      const len = (item.str || '').length + (item.hasEOL ? 1 : 0);
-      const s = off, e = off + len - 1;
-      off += len;
-      if (e < a || s > b || !item.str || !item.transform) continue;
+    items.forEach((item, i) => {
+      if (!item.str || !item.transform) return;
+      const s = P.text.itemStarts[pg][i], e = s + item.str.length - 1;
+      if (e < a || s > b) return;
       const [, , , d, x, y] = item.transform;
       const h = item.height || Math.abs(d);
       // 一個項目常是半行字：照字數比例裁到真正那幾個字（中文等寬，誤差在一兩個字內）
       const n = item.str.length;
       const from = (Math.max(a, s) - s) / n, to = Math.min(n, Math.min(b, e) - s + 1) / n;
+      // y 是基線，字會往下伸出一截（中文約字高的兩成）：框的底邊放在基線上，底線會劃過字的下半部
       const r = { left: (x + item.width * from) / p.w, right: (x + item.width * to) / p.w,
-        top: 1 - (y + h) / p.h, bottom: 1 - y / p.h };
+        top: 1 - (y + h * 0.9) / p.h, bottom: 1 - (y - h * 0.2) / p.h };
       // 同一行（垂直方向重疊過半）的項目併成一個框
       const line = lines.find((l) => Math.min(l.bottom, r.bottom) - Math.max(l.top, r.top) > (r.bottom - r.top) / 2);
       if (line) {
@@ -273,7 +272,7 @@
       } else {
         lines.push(r);
       }
-    }
+    });
     return lines;
   }
 
@@ -294,6 +293,103 @@
     if (background) I().setPendingSync(show);
     else setTimeout(show, 450);
   }
+
+  /* ── 標記的文字來源（docs/SPEC.md 13.13）────────────────────
+   * highlights.js 綁著 DOM 的那幾件事，PDF 版的實作。位置一律是全文（P.text.full）裡的偏移 */
+
+  /* 全文第 raw 個字在哪一頁（0 起算） */
+  function pageOf(raw) {
+    const { starts, strings } = P.text;
+    let lo = 0, hi = starts.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (starts[mid] <= raw) lo = mid; else hi = mid - 1;
+    }
+    // 空白頁的起點跟下一頁一樣，往回找到真正裝著這個字的那頁
+    while (lo > 0 && raw >= starts[lo] + strings[lo].length && starts[lo - 1] === starts[lo]) lo--;
+    return lo;
+  }
+
+  /* 文字層裡的 (node, offset) → 全文偏移。node 可能是 span 裡的文字、span 本身，
+   * 或拖選拉到空白處時的文字層、endOfContent */
+  function offsetAt(node, off) {
+    const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+    if (!el || !el.closest) return null;
+    const layer = el.closest('.textLayer');
+    if (!layer) return null;
+    const pg = Number(layer.dataset.pg);
+    const base = P.text.starts[pg];
+    const spanStart = (span) => base + P.text.itemStarts[pg][Number(span.dataset.i)];
+    const span = el.closest('span[data-i]');
+    if (span) {
+      const len = span.textContent.length;
+      const inside = node.nodeType === Node.TEXT_NODE ? off : (off > 0 ? len : 0);
+      return spanStart(span) + Math.min(inside, len);
+    }
+    // 落在文字層或 endOfContent 上：取邊界後的第一個 span，沒有就是這一頁的結尾
+    const spans = [...layer.querySelectorAll('span[data-i]')];
+    const boundary = node === layer ? layer.childNodes[off] : null;
+    const after = boundary ? spans.find((sp) => boundary === sp || boundary.contains(sp) ||
+      (boundary.compareDocumentPosition(sp) & Node.DOCUMENT_POSITION_FOLLOWING)) : null;
+    return after ? spanStart(after) : base + P.text.strings[pg].length;
+  }
+
+  /* 側欄分組：有書籤依章，沒有依頁 */
+  function groupAt(raw) {
+    const pg = pageOf(raw) + 1;
+    let found = -1;
+    P.toc.forEach((t, i) => { if (t.page != null && t.page <= pg) found = i; });
+    if (found !== -1) return { id: 'c' + found, text: P.toc[found].label };
+    return { id: 'p' + pg, text: `第 ${pg} 頁` };
+  }
+
+  function drawHighlight(it) {
+    const first = pageOf(it.start), last = pageOf(it.end - 1);
+    let tail = null;
+    for (let pg = first; pg <= last; pg++) {
+      const base = P.text.starts[pg];
+      const a = pg === first ? it.start - base : 0;
+      const b = pg === last ? it.end - 1 - base : P.text.strings[pg].length - 1;
+      for (const rect of lineRects(pg, a, b)) {
+        const el = document.createElement('div');
+        el.className = 'mb-hl mb-pdf-hl';
+        el.dataset.id = it.id;
+        el.dataset.style = it.style;
+        placeBox(el, rect, 0);
+        P.pages[pg].box.appendChild(el);
+        tail = el;
+      }
+    }
+    if (tail && it.note) tail.classList.add('mb-note-end');
+  }
+
+  /* 文字層在最上面才能選字，疊在下面的標記框收不到滑鼠：用座標自己找 */
+  function highlightAt(x, y) {
+    const under = document.elementFromPoint(x, y);
+    const box = under && under.closest && under.closest('.mb-pdf-page');
+    if (!box) return null;
+    let hit = null;
+    box.querySelectorAll('.mb-pdf-hl').forEach((el) => {
+      const r = el.getBoundingClientRect();
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) hit = el;
+    });
+    return hit;
+  }
+
+  BK.pdfStashHighlights = (payload) => { P.hlPayload = payload; };
+
+  BK.pdfSource = {
+    field: 'page',
+    ready: () => !!P.text,
+    text: () => P.text.full,
+    // 錨點的位置提示是頁碼：同一句出現多次時，頁碼相同的那處加分
+    heads: () => P.text.starts.map((raw, i) => ({ id: i + 1, text: `第 ${i + 1} 頁`, raw })),
+    groupAt,
+    offsetAt,
+    clear: () => content.querySelectorAll('.mb-pdf-hl').forEach((el) => el.remove()),
+    draw: drawHighlight,
+    highlightAt,
+  };
 
   /* ── 搜尋（Cmd F）─────────────────────────────────────────
    * 字是 canvas 畫的，不能像心得那樣把命中包成 <mark>：在全文裡找，換算成框疊在頁框上。
@@ -407,8 +503,7 @@
    * 兩邊的字一定一樣，位置才對得上（docs/SPEC.md 13.13）。 */
 
   async function extractText(doc, gen, announce) {
-    const pages = [], strings = [], starts = [];
-    let full = '';
+    const pages = [];
     for (let i = 1; i <= doc.numPages; i++) {
       let tc;
       try {
@@ -418,20 +513,57 @@
       }
       if (gen !== P.gen) return;
       for (const item of tc.items) if (item.str) item.str = normalizeText(item.str);
-      const str = tc.items.map((x) => (x.str || '') + (x.hasEOL ? '\n' : '')).join('');
       pages.push(tc);
-      strings.push(str);
-      starts.push(full.length);
-      full += str;
     }
-    const hasText = full.replace(/\s/g, '').length >= doc.numPages * MIN_CHARS_PER_PAGE;
-    P.text = { pages, strings, full, starts, hasText };
+    P.text = joinText(pages);
+    P.text.hasText = P.text.full.replace(/\s/g, '').length >= doc.numPages * MIN_CHARS_PER_PAGE;
     // 重載（檔案被換掉）不再講一次
-    if (!hasText && announce) MB.toast('這份 PDF 沒有文字，不能標記與搜尋');
+    if (!P.text.hasText && announce) MB.toast('這份 PDF 沒有文字，不能標記與搜尋');
     P.near.forEach(drawText);
     flushPendingSync();
+    if (window.MBHighlights) {
+      const payload = P.hlPayload && !P.text.hasText
+        ? Object.assign({}, P.hlPayload, { writable: false, reason: '這份 PDF 沒有文字，不能標記' })
+        : P.hlPayload;
+      P.hlPayload = null;
+      window.MBHighlights.afterRender(payload, null);
+    }
     // 全文還沒抽完就按了搜尋：那時一筆都找不到，抽完重找
     I().rerunFind();
+  }
+
+  /* 每頁的字串：項目依序接起來，行尾（與頁尾）的換行照規則換掉（docs/SPEC.md 13.13）——
+   * 兩邊都是中日文字就直接接起來，其他換成一個空格。不處理的話中文句子被斷在兩行，
+   * 標記的 exact 會是「攀爬的困 難度」。英文行尾的連字號照原樣：是斷字還是字本身就有，猜不準。
+   * 記下每個項目在那頁字串裡從第幾個字開始：文字層的選取、字的框都靠它換算 */
+  const CJK = /[\u2E80-\u9FFF\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFFEF\u{20000}-\u{2FA1F}]/u;
+
+  function joinText(pages) {
+    // 每個換行點後面第一個字（可能在下一頁），倒著走一次就知道
+    const flat = pages.flatMap((tc, pg) => tc.items.map((item, i) => ({ item, pg, i })));
+    const nextChar = new Array(flat.length);
+    let next = '';
+    for (let k = flat.length - 1; k >= 0; k--) {
+      nextChar[k] = next;
+      const str = flat[k].item.str;
+      if (str && str.trim()) next = str.trimStart()[0];
+    }
+    const strings = pages.map(() => '');
+    const itemStarts = pages.map((tc) => new Array(tc.items.length));
+    let prev = '';
+    flat.forEach(({ item, pg, i }, k) => {
+      itemStarts[pg][i] = strings[pg].length;
+      const str = item.str || '';
+      strings[pg] += str;
+      if (str.trim()) prev = str.trimEnd().slice(-1);
+      const pageEnd = i === pages[pg].items.length - 1;
+      if (!(item.hasEOL || pageEnd) || !nextChar[k] || /\s$/.test(str)) return;
+      if (!(CJK.test(prev) && CJK.test(nextChar[k]))) strings[pg] += ' ';
+    });
+    const starts = [];
+    let full = '';
+    for (const str of strings) { starts.push(full.length); full += str; }
+    return { pages, strings, itemStarts, full, starts };
   }
 
   /* 每頁平均不到這麼多字（不算空白）就當作沒有文字層。實測每頁一張圖的書抽到 0 字，
@@ -525,6 +657,10 @@
       return;
     }
     if (gen !== P.gen || p.layer !== div) return;
+    // textDivs 依序對應每個有 str 的項目：記下來，選取才換算得回全文的位置
+    div.dataset.pg = index;
+    const textItems = P.text.pages[index].items.map((it, i) => (it.str === undefined ? -1 : i)).filter((i) => i !== -1);
+    layer.textDivs.forEach((span, k) => { span.dataset.i = textItems[k]; });
     // 拖選拉到行與行之間的空白時，選取範圍不要跳到整頁開頭（pdf.js 檢視器的做法）
     const end = document.createElement('div');
     end.className = 'endOfContent';

@@ -611,6 +611,46 @@ mark.mb-hl .mb-b { color: var(--hl-accent); }
   user-select: none;
 }
 .mb-pdf-page .textLayer.selecting .endOfContent { top: 0; }
+/* 標記（docs/SPEC.md 13.13）：字在 canvas 上，標記是疊上去的框。頁面永遠是白的，
+   顏色一律用淺色那組（含底線的深字色），不跟視窗的明暗 —— 深色那組的底線是淺灰，白頁上看不見 */
+.mb-pdf-page {
+  --hl-green: rgba(95, 184, 120, 0.30);
+  --hl-blue: rgba(95, 143, 208, 0.26);
+  --hl-purple: rgba(160, 124, 224, 0.26);
+  --hl-pink: rgba(224, 102, 143, 0.24);
+  --hl-underline: #1e1e1e;
+}
+.mb-pdf-hl {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;     /* 文字層要收得到滑鼠才能選字；點擊與移過由 highlights.js 用座標判斷 */
+  mix-blend-mode: multiply;
+  border-radius: 2px;
+}
+.mb-pdf-hl[data-style="green"]  { background: var(--hl-green);  --hl-dot: #5fb878; }
+.mb-pdf-hl[data-style="blue"]   { background: var(--hl-blue);   --hl-dot: #5f8fd0; }
+.mb-pdf-hl[data-style="purple"] { background: var(--hl-purple); --hl-dot: #a07ce0; }
+.mb-pdf-hl[data-style="pink"]   { background: var(--hl-pink);   --hl-dot: #e0668f; }
+.mb-pdf-hl[data-style="underline"] {
+  border-bottom: 1.5px solid var(--hl-underline);
+  border-radius: 0;
+  --hl-dot: var(--hl-underline);
+}
+.mb-pdf-hl.mb-active { outline: 1.5px solid #8a8a8a; outline-offset: 1px; }
+.mb-pdf-hl.mb-flash { animation: mb-flash 1.1s ease-in-out; }
+/* 註記圓點：框外右上角，同心得的上標圓點 */
+.mb-pdf-hl.mb-note-end::after {
+  content: "";
+  position: absolute;
+  right: -0.5em;
+  top: -0.15em;
+  width: 0.4em;
+  height: 0.4em;
+  border-radius: 50%;
+  background: var(--hl-dot);
+}
+.mb-pdf-page.mb-hl-hover { cursor: pointer; }
+
 /* 搜尋命中：顏色同心得的 mark.mb-hit。multiply 疊在頁面上，底下的黑字照樣是黑的 */
 .mb-pdf-hit {
   position: absolute;

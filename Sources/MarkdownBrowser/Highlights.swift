@@ -108,6 +108,12 @@ enum SidecarFile {
             guard h[key] is String else { return false }
         }
         if let heading = h["heading"], !(heading is String || heading is NSNull) { return false }
+        // PDF 的條目用 page 取代 heading（docs/SPEC.md 12.4）：從 1 開始的整數。
+        // JSONSerialization 把 true 和 1.5 也包成 NSNumber，要分得出來
+        if let page = h["page"] {
+            guard let n = page as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID(),
+                  !CFNumberIsFloatType(n), n.intValue >= 1 else { return false }
+        }
         return true
     }
 

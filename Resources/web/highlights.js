@@ -36,6 +36,27 @@
     }
   }
 
+  /* ── 文字來源（docs/SPEC.md 13.13）────────────────────────
+   * 綁著 DOM 的幾件事：取全文、錨點的位置提示、選取換算成偏移、畫標記、找滑鼠下的標記。
+   * 心得與 EPUB 用這裡的 DOM 版；PDF 的字在 canvas 上，由 bookpdf.js 提供（MBBook.pdfSource）。
+   * 合併、擦除、註記、工具列、存檔這些第 12 節的規則只有一份，都在下面 */
+  const domSource = {
+    field: 'heading',                       // 錨點的位置提示存在哪個欄位
+    ready: () => true,
+    text: () => content.textContent,
+    heads: () => headingOffsets(),
+    groupAt: (raw) => headingAt(raw),       // 側欄分組
+    offsetAt: (node, off) => offsetOf(node, off),
+    clear: () => unwrapAll(),
+    draw: (it) => wrap(it),
+    highlightAt: () => null,                // DOM 版用事件的 target 就找得到
+  };
+  const src = () => (window.MBBook && window.MBBook.pdf && window.MBBook.pdfSource) || domSource;
+
+  /* 滑鼠事件落在哪一條標記上（回傳那條標記的某個元素） */
+  const highlightOf = (e) => (e.target.closest && e.target.closest('mark.mb-hl')) ||
+    src().highlightAt(e.clientX, e.clientY);
+
   /* ── 文字索引 ──────────────────────────────────────────
    * raw：content.textContent。norm：空白連續段壓成一個空白。
    * 兩邊互查的對照表讓錨點在 norm 上比對、在 raw 上繪製。
@@ -44,7 +65,7 @@
   const normalize = (s) => (s || '').replace(/\s+/g, ' ');
 
   function buildIndex() {
-    const raw = content.textContent;
+    const raw = src().text();
     let norm = '';
     const n2r = [];
     const r2n = new Array(raw.length + 1);
@@ -59,7 +80,7 @@
     }
     r2n[raw.length] = norm.length;
     n2r.push(raw.length);
-    idx = { raw, norm, n2r, r2n, heads: headingOffsets() };
+    idx = { raw, norm, n2r, r2n, heads: src().heads() };
   }
 
   /* 每個標題前面有幾個字。一次走完整份文件，而不是每個標題各建一個 Range ——
@@ -124,7 +145,7 @@
         const after = idx.norm.slice(at + exact.length, at + exact.length + suffix.length);
         let score = commonSuffix(prefix, before) + commonPrefix(suffix, after);
         const head = headingAt(idx.n2r[at]);
-        if ((head ? head.id : null) === (item.heading ?? null)) score += 8;
+        if ((head ? head.id : null) === (item[src().field] ?? null)) score += 8;
         if (score > bestScore) { bestScore = score; best = at; }
       }
     }
@@ -143,7 +164,7 @@
       it.prefix = idx.norm.slice(Math.max(0, ns - CONTEXT), ns);
       it.suffix = idx.norm.slice(ne, ne + CONTEXT);
       const head = headingAt(it.start);
-      it.heading = head ? head.id : null;
+      it[src().field] = head ? head.id : null;
     }
   }
 
@@ -201,9 +222,9 @@
   function paint() {
     const find = window.MB && MB.internal;
     if (find) find.clearHits();
-    unwrapAll();
+    src().clear();
     buildIndex();
-    for (const it of anchored()) wrap(it);
+    for (const it of anchored()) src().draw(it);
     if (find) find.rerunFind();
     mirror();
   }
@@ -215,7 +236,7 @@
   /* 側欄的鏡像：比對後的清單，每次異動送一次。 */
   function mirror() {
     const list = [...anchored(), ...orphans()].map((it) => {
-      const head = it.orphan ? null : headingAt(it.start);
+      const head = it.orphan ? null : src().groupAt(it.start);
       return {
         id: it.id,
         style: it.style,
@@ -242,7 +263,9 @@
     }
     if (!list.length) return null;
     const out = list.map((it) => {
-      const o = { id: it.id, style: it.style, exact: it.exact, prefix: it.prefix, suffix: it.suffix, heading: it.heading ?? null };
+      const o = { id: it.id, style: it.style, exact: it.exact, prefix: it.prefix, suffix: it.suffix };
+      // PDF 的條目用 page 取代 heading，不寫 heading 鍵（docs/SPEC.md 12.4）
+      if (src().field === 'page') { if (it.page != null) o.page = it.page; } else o.heading = it.heading ?? null;
       if (it.note) o.note = it.note;
       o.created = it.created;
       return o;
@@ -278,6 +301,7 @@
         prefix: h.prefix || '',
         suffix: h.suffix || '',
         heading: h.heading ?? null,
+        page: Number.isInteger(h.page) && h.page >= 1 ? h.page : null,
         note: typeof h.note === 'string' ? h.note : '',
         created: h.created || timestamp(),
         prevId: i ? String(all[i - 1].id) : null,
@@ -369,8 +393,9 @@
     all.selectNodeContents(content);
     const startInside = r.compareBoundaryPoints(Range.START_TO_START, all) >= 0;
     const endInside = r.compareBoundaryPoints(Range.END_TO_END, all) <= 0;
-    let start = startInside ? offsetOf(r.startContainer, r.startOffset) : 0;
-    let end = endInside ? offsetOf(r.endContainer, r.endOffset) : idx.raw.length;
+    let start = startInside ? src().offsetAt(r.startContainer, r.startOffset) : 0;
+    let end = endInside ? src().offsetAt(r.endContainer, r.endOffset) : idx.raw.length;
+    if (start == null || end == null) return null;
     while (start < end && isSpace(idx.raw[start])) start++;
     while (end > start && isSpace(idx.raw[end - 1])) end--;
     if (start >= end) return null;
@@ -464,14 +489,14 @@
   }
 
   function setActive(id) {
-    content.querySelectorAll('mark.mb-active').forEach((m) => m.classList.remove('mb-active'));
-    if (id) content.querySelectorAll(`mark.mb-hl[data-id="${id}"]`).forEach((m) => m.classList.add('mb-active'));
+    content.querySelectorAll('.mb-hl.mb-active').forEach((m) => m.classList.remove('mb-active'));
+    if (id) content.querySelectorAll(`.mb-hl[data-id="${id}"]`).forEach((m) => m.classList.add('mb-active'));
   }
 
   function openEdit(id, withNote) {
     // 同一條也要先寫：重畫工具列時輸入框會跟著消失
     if (ctx && ctx.mode === 'edit') commitNote();
-    const first = content.querySelector(`mark.mb-hl[data-id="${id}"]`);
+    const first = content.querySelector(`.mb-hl[data-id="${id}"]`);
     if (!first) { hideBar(); return; }
     if (!ctx || ctx.id !== id) savedAt = null;
     ctx = { mode: 'edit', id };
@@ -574,10 +599,7 @@
 
   content.addEventListener('mouseup', () => {
     setTimeout(() => {
-      if (!idx) return;
-      // PDF 的文字層是開檔之後才畫的，文字索引對不上，連「拷貝」都會取錯字。
-      // 標記接上 PDF（docs/SPEC.md 13.13）之前不跳工具列，複製走 ⌘C
-      if (window.MBBook && window.MBBook.pdf) return;
+      if (!idx || !src().ready()) return;
       const s = selectionRange();
       if (!s) return;
       commitNote();
@@ -592,7 +614,7 @@
 
   content.addEventListener('click', (e) => {
     if (e.target.closest('a')) return;                    // 連結優先
-    const m = e.target.closest('mark.mb-hl');
+    const m = highlightOf(e);
     if (!m || !window.getSelection().isCollapsed) return;
     openEdit(m.dataset.id);
   });
@@ -600,7 +622,7 @@
   document.addEventListener('mousedown', (e) => {
     hideTip();
     if (bar.contains(e.target) || banner.contains(e.target)) return;
-    if (e.target.closest('mark.mb-hl') && !e.target.closest('a')) return;
+    if (highlightOf(e) && !e.target.closest('a')) return;
     if (bar.classList.contains('show')) hideBar();
   });
 
@@ -635,7 +657,7 @@
 
   function showTip(it) {
     if (bar.classList.contains('show')) return;          // 工具列開著時不顯示
-    const rects = [...content.querySelectorAll(`mark.mb-hl[data-id="${it.id}"]`)].flatMap((m) => [...m.getClientRects()]);
+    const rects = [...content.querySelectorAll(`.mb-hl[data-id="${it.id}"]`)].flatMap((m) => [...m.getClientRects()]);
     if (!rects.length) return;
     tip.firstElementChild.textContent = it.note;
     tip.classList.add('show');
@@ -650,14 +672,28 @@
     tip.style.top = top + 'px';
   }
 
-  content.addEventListener('mouseover', (e) => {
-    const m = e.target.closest('mark.mb-hl');
-    if (!m) return;
+  function hoverOn(m) {
     const it = byId(m.dataset.id);
     if (!it || !it.note || tipId === it.id) return;      // 同一條的另一塊 <mark> 不重新計時
     hideTip();
     tipId = it.id;
     tipTimer = setTimeout(() => showTip(it), TIP_DELAY);
+  }
+
+  content.addEventListener('mouseover', (e) => {
+    const m = e.target.closest('mark.mb-hl');
+    if (m) hoverOn(m);
+  });
+
+  /* PDF 的標記框收不到滑鼠（文字層在上面），移過與游標用座標判斷 */
+  content.addEventListener('mousemove', (e) => {
+    if (src() === domSource) return;
+    const m = src().highlightAt(e.clientX, e.clientY);
+    const page = e.target.closest && e.target.closest('.mb-pdf-page');
+    content.querySelectorAll('.mb-hl-hover').forEach((el) => { if (el !== page || !m) el.classList.remove('mb-hl-hover'); });
+    if (page && m) page.classList.add('mb-hl-hover');
+    if (m) hoverOn(m);
+    else if (tipId) hideTip();
   });
   content.addEventListener('mouseout', (e) => {
     const from = e.target.closest('mark.mb-hl');
@@ -679,6 +715,13 @@
 
   const HL = {};
   window.MBHighlights = HL;
+
+  /* PDF 開檔：舊的文字索引對不上新內容，全文抽完 afterRender 才重建。標記清單留著，重載時沿用 */
+  HL.suspend = function () {
+    if (bar.classList.contains('show')) hideBar();
+    hideTip();
+    idx = null;
+  };
 
   /* MB.render 換內容之前：把位置寫回錨點欄位（新內容一來位置就失效了），
    * 正在打的註記先寫入。 */
@@ -720,6 +763,8 @@
    * 不能像重載那樣先寫入註記 —— 那會拿記憶體裡的舊清單蓋掉外部的改動。
    * 改成先記下打到一半的字，載入新內容後同一條還在就補進去再寫。 */
   MB.setHighlights = function (payload) {
+    // PDF 的全文還沒抽完：先交給 bookpdf.js 存著，抽完一起比對
+    if (!src().ready()) { window.MBBook.pdfStashHighlights(payload); return; }
     clearTimeout(typingTimer);
     const t = bar.querySelector('textarea');
     const pending = t && ctx && ctx.mode === 'edit' ? { id: ctx.id, text: t.value.trim() } : null;
@@ -743,7 +788,7 @@
 
   MB.revealHighlight = function (id) {
     hideBar();
-    const marks = [...content.querySelectorAll(`mark.mb-hl[data-id="${id}"]`)];
+    const marks = [...content.querySelectorAll(`.mb-hl[data-id="${id}"]`)];
     if (!marks.length) return;
     MB.internal.reveal(marks[0], true, 'center');
     setTimeout(() => marks.forEach((m) => {
@@ -780,6 +825,8 @@
 
   /* 認領孤兒 sidecar：拿別的 sidecar 來試比對，回報對得上幾條。不改任何狀態。 */
   MB.probeHighlights = function (candidates) {
+    // PDF 的全文還沒抽完：比不了，當作一條都對不上（只是不主動提議認領）
+    if (!src().ready()) return (candidates || []).map((c) => ({ name: c.name, matched: 0, total: 0 }));
     if (!idx) buildIndex();
     return (candidates || []).map((c) => {
       let list = [];
