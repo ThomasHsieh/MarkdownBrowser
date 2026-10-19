@@ -47,6 +47,12 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(bookLayout.rawValue, forKey: Keys.bookLayout) }
     }
 
+    /// PDF 的顯示方式，跟 EPUB 那個分開記（docs/SPEC.md 13.13）：論文多半要捲動，讀完一本翻頁模式的
+    /// EPUB，下一份論文不該被縮成整頁。第一次安裝預設捲動。
+    var pdfLayout: BookLayout {
+        didSet { defaults.set(pdfLayout.rawValue, forKey: Keys.pdfLayout) }
+    }
+
     /// 雙欄的分隔線位置：書那欄佔內容區的比例。
     var splitRatio: Double {
         didSet { defaults.set(splitRatio, forKey: Keys.splitRatio) }
@@ -117,6 +123,7 @@ final class AppSettings: ObservableObject {
         static let compare = "compareEnabled"
         static let splitRatio = "splitRatio"
         static let bookLayout = "bookLayout"
+        static let pdfLayout = "pdfLayout"
         static let bookPairs = "bookPairs"
         static let autoBookPairs = "autoBookPairs"
         static let libraryFolders = "libraryFolders"
@@ -134,6 +141,7 @@ final class AppSettings: ObservableObject {
         compareEnabled = defaults.object(forKey: Keys.compare) as? Bool ?? true
         splitRatio = defaults.object(forKey: Keys.splitRatio) as? Double ?? 0.5
         bookLayout = BookLayout(rawValue: defaults.string(forKey: Keys.bookLayout) ?? "") ?? .single
+        pdfLayout = BookLayout(rawValue: defaults.string(forKey: Keys.pdfLayout) ?? "") ?? .scroll
         bookPairs = defaults.dictionary(forKey: Keys.bookPairs) as? [String: String] ?? [:]
         autoBookPairs = defaults.dictionary(forKey: Keys.autoBookPairs) as? [String: String] ?? [:]
         libraryFolders = (defaults.stringArray(forKey: Keys.libraryFolders) ?? []).map { URL(fileURLWithPath: $0) }

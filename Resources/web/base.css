@@ -554,6 +554,30 @@ mark.mb-hl .mb-b { color: var(--hl-accent); }
   --scale-round-x: 1px;
   --scale-round-y: 1px;
 }
+/* 單頁、雙頁（docs/SPEC.md 13.13）：只顯示目前這組跨頁，整頁塞進欄裡、不捲動 */
+.mb-pdf-paged body { overflow: hidden; }
+.mb-pdf-paged #mb-pdf {
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  gap: 0;
+  height: 100vh;
+  box-sizing: border-box;
+  padding: 12px 12px 40px;
+}
+.mb-pdf-paged .mb-pdf-page { flex: none; }
+.mb-pdf-page.mb-off { display: none; }
+.mb-pdf-indicator {
+  position: fixed;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  color: var(--muted);
+  font: 12px -apple-system, sans-serif;
+  pointer-events: none;
+}
+.mb-pdf-indicator[hidden] { display: none; }
+
 .mb-pdf-page canvas {
   position: absolute;
   inset: 0;

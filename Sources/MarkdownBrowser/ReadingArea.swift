@@ -115,23 +115,24 @@ private struct BookColumn: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // PDF 沒有書籤就不放下拉選單（docs/SPEC.md 13.13）
-            if book.epub != nil || (book.pdf != nil && !book.pdfToc.isEmpty) {
+            // PDF 一律有這一列；沒有書籤時只放三選一（docs/SPEC.md 13.13）
+            if book.epub != nil || book.pdf != nil {
                 HStack(spacing: 8) {
-                    BookChapterMenu(state: state, book: book)
-                        .frame(height: 26)
-                    // 捲動｜單頁｜雙頁（docs/SPEC.md 13.12）。固定版面的書「捲動」當作單頁。
-                    // PDF 目前只有捲動模式
-                    if book.epub != nil {
-                        Picker("", selection: $state.bookLayout) {
-                            ForEach(BookLayout.allCases, id: \.self) { Text($0.name).tag($0) }
-                        }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
-                        .controlSize(.small)
-                        .fixedSize()
-                        .help("書的顯示方式：捲動、單頁、雙頁")
+                    if book.epub != nil || !book.pdfToc.isEmpty {
+                        BookChapterMenu(state: state, book: book)
+                            .frame(height: 26)
+                    } else {
+                        Spacer().frame(height: 26)
                     }
+                    // 捲動｜單頁｜雙頁（docs/SPEC.md 13.12）。固定版面的書「捲動」當作單頁
+                    Picker("", selection: $state.currentBookLayout) {
+                        ForEach(BookLayout.allCases, id: \.self) { Text($0.name).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .fixedSize()
+                    .help("書的顯示方式：捲動、單頁、雙頁")
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 3)

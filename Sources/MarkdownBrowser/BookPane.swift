@@ -54,7 +54,7 @@ final class BookPane: PaneDocument {
 
     /// 顯示方式要在書渲染之前就定好：先分頁再回到閱讀位置，不然會先捲動排一次、再翻頁排一次。
     override func pushInitialState() {
-        bridge?.setBookLayout(host?.bookLayout.rawValue ?? BookLayout.single.rawValue)
+        bridge?.setBookLayout(host?.currentBookLayout.rawValue ?? BookLayout.single.rawValue)
         super.pushInitialState()
     }
 
@@ -75,6 +75,8 @@ final class BookPane: PaneDocument {
         guard let bridge else { return false }
         // 重載：翻譯 repo 重新打包了 EPUB，整本重新解析
         if keepScroll { parse(url); host?.bookDidOpen() }
+        // 版面要在渲染之前定好；EPUB 與 PDF 各記一份，換書時換成這本的那一份
+        if let host { bridge.setBookLayout(host.currentBookLayout.rawValue) }
         if let pdf {
             bridge.setBook(pdf)
             bridge.renderBook(payload(for: pdf, url: url), keepScroll: keepScroll, highlights: highlights)
@@ -168,7 +170,7 @@ final class BookPane: PaneDocument {
             if let chapter { position["chapter"] = chapter }
             AppSettings.shared.setBookPosition(position, for: url)
         }
-        if epub?.fixedLayout == true, body["turned"] as? Bool == true, let chapter, chapter != previous {
+        if epub?.fixedLayout == true || pdf != nil, body["turned"] as? Bool == true, let chapter, chapter != previous {
             host?.bookChapterTurned(to: chapter)
         }
     }

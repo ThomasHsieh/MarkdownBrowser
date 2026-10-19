@@ -33,6 +33,8 @@
   // 翻頁模式只用在可重排的書；心得那欄（BK.active 為假）一律捲動
   // PDF 目前只有捲動模式
   Object.defineProperty(BK, 'paged', { get: () => BK.active && !BK.fixed && !BK.pdf && BK.layout !== 'scroll' });
+  // PDF 的單頁、雙頁另走 bookpdf.js（docs/SPEC.md 13.13）
+  Object.defineProperty(BK, 'pdfPaged', { get: () => BK.active && BK.pdf && BK.layout !== 'scroll' });
 
   BK.deactivate = function () {
     if (!BK.active) return;
@@ -43,7 +45,7 @@
     BK.toc = [];
     BK.markers = [];
     BK.chapter = null;
-    document.documentElement.classList.remove('mb-book-mode', 'mb-fixed-mode', 'mb-pdf-mode', 'mb-paged', 'mb-double');
+    document.documentElement.classList.remove('mb-book-mode', 'mb-fixed-mode', 'mb-pdf-mode', 'mb-pdf-paged', 'mb-paged', 'mb-double');
     hideFullpage();
     content.classList.remove('mb-book');
     closePopover();
@@ -876,7 +878,7 @@
       return;
     }
     if (BK.pdf) {
-      const msg = { type: 'bookPosition', chapter: BK.pdfChapter(), turned: false };
+      const msg = { type: 'bookPosition', chapter: BK.pdfChapter(), turned: !!turned };
       if (!initial) msg.position = BK.pdfAnchor() || {};
       toSwift(msg);
       return;
@@ -886,6 +888,8 @@
     if (!initial) msg.position = captureBookAnchor() || {};
     toSwift(msg);
   }
+
+  BK.reportPosition = (turned) => reportPosition(turned);
 
   const onBookScroll = () => {
     if (!BK.active || BK.fixed) return;
@@ -1144,7 +1148,8 @@
   MB.setBookLayout = function (mode) {
     const anchor = BK.active && !BK.fixed ? captureBookAnchor() : null;
     BK.layout = mode;
-    if (!BK.active || BK.pdf) return;
+    if (!BK.active) return;
+    if (BK.pdf) { BK.pdfSetLayout(); return; }
     if (BK.fixed) { layoutFixed(); reportPosition(false); return; }
     applyLayout();
     requestAnimationFrame(() => {
@@ -1396,6 +1401,21 @@
       return true;
     }
 
+    // PDF 翻頁照 13.12：↑／↓ 也翻頁，Home／End 到本章首尾頁（docs/SPEC.md 13.13）
+    if (BK.pdfPaged) {
+      let edge = 0;
+      if (!step) {
+        if (k === ' ') step = shift ? -1 : 1;
+        else if (k === 'PageDown' || k === 'ArrowDown') step = 1;
+        else if (k === 'PageUp' || k === 'ArrowUp') step = -1;
+        else if (k === 'Home') edge = -1;
+        else if (k === 'End') edge = 1;
+      }
+      if (!step && !edge) return false;
+      if (edge) BK.pdfEdge(edge); else BK.pdfTurn(step);
+      return true;
+    }
+
     if (BK.paged) {
       let edge = 0;
       if (!step) {
@@ -1431,7 +1451,7 @@
     if (!BK.active || e.metaKey || e.ctrlKey || e.altKey) return;
     const t = e.target;
     if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') return;
-    if (forwardScrollKeys && (BK.fixed || BK.paged) && SCROLL_KEYS.has(e.key)) {
+    if (forwardScrollKeys && (BK.fixed || BK.paged || BK.pdfPaged) && SCROLL_KEYS.has(e.key)) {
       if (e.shiftKey || e.isComposing || t.isContentEditable) return;
       e.preventDefault();
       I().toSwift({ type: 'scrollKey', key: e.key });
@@ -1451,7 +1471,7 @@
   /* 觸控板左右滑：累積到一個門檻才翻一頁，翻完冷卻一下，免得一次滑過好幾頁 */
   let wheelAcc = 0, wheelLock = 0;
   window.addEventListener('wheel', (e) => {
-    if (!BK.fixed && !BK.paged) return;
+    if (!BK.fixed && !BK.paged && !BK.pdfPaged) return;
     e.preventDefault();
     const now = Date.now();
     if (now < wheelLock) return;
@@ -1459,7 +1479,9 @@
     wheelAcc += Math.abs(dx) > Math.abs(dy) ? dx * (BK.fixed && fx.rtl ? -1 : 1) : dy;
     if (Math.abs(wheelAcc) > 80) {
       closePopover();
-      if (BK.fixed) turn(wheelAcc > 0 ? 1 : -1); else turnPage(wheelAcc > 0 ? 1 : -1);
+      if (BK.fixed) turn(wheelAcc > 0 ? 1 : -1);
+      else if (BK.pdfPaged) BK.pdfTurn(wheelAcc > 0 ? 1 : -1);
+      else turnPage(wheelAcc > 0 ? 1 : -1);
       wheelAcc = 0;
       wheelLock = now + 450;
     }

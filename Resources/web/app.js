@@ -164,6 +164,7 @@ function reveal(el, smooth, block) {
   if (!el) return;
   const book = window.MBBook;
   if (book && book.paged) { book.reveal(el); return; }
+  if (book && book.pdfPaged) { book.pdfReveal(el); return; }
   el.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: block || 'start' });
 }
 
@@ -716,7 +717,7 @@ function innerScroller(el) {
 window.addEventListener('wheel', (e) => {
   if (e.defaultPrevented || e.ctrlKey) return;              // ctrl＋滾輪是縮放手勢
   const book = window.MBBook;
-  if (book && (book.paged || book.fixed)) return;
+  if (book && (book.paged || book.fixed || book.pdfPaged)) return;
   if (!isNotchedWheel(e) || innerScroller(e.target)) return;
   e.preventDefault();
   glideBy(e.deltaY);

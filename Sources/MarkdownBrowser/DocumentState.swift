@@ -90,12 +90,25 @@ final class DocumentState: PaneDocument {
         didSet { settings.compareEnabled = compareEnabled }
     }
 
-    /// 書那欄的顯示方式。每個視窗各自，新視窗沿用最後一次的選擇。
+    /// 書那欄的顯示方式。每個視窗各自，新視窗沿用最後一次的選擇。EPUB 與 PDF 各記一份（13.13）
     @Published var bookLayout: BookLayout {
         didSet {
             settings.bookLayout = bookLayout
-            book.bridge?.setBookLayout(bookLayout.rawValue)
+            if book.pdf == nil { book.bridge?.setBookLayout(bookLayout.rawValue) }
         }
+    }
+
+    @Published var pdfLayout: BookLayout {
+        didSet {
+            settings.pdfLayout = pdfLayout
+            if book.pdf != nil { book.bridge?.setBookLayout(pdfLayout.rawValue) }
+        }
+    }
+
+    /// 目前這本書用的那一份：書那欄的三選一與選單列都綁這個
+    var currentBookLayout: BookLayout {
+        get { book.pdf != nil ? pdfLayout : bookLayout }
+        set { if book.pdf != nil { pdfLayout = newValue } else { bookLayout = newValue } }
     }
 
     /// 書那欄佔內容區的比例。
@@ -161,6 +174,7 @@ final class DocumentState: PaneDocument {
         compareEnabled = settings.compareEnabled
         splitRatio = settings.splitRatio
         bookLayout = settings.bookLayout
+        pdfLayout = settings.pdfLayout
         book = BookPane()
         super.init()
         book.host = self

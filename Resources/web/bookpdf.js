@@ -33,6 +33,11 @@
     pages: [],       // [{w, h, box, canvas, task, drawnWidth, layer}]
     observer: null,
     near: new Set(), // 在畫面附近、該畫的頁
+    paged: false,    // 單頁、雙頁（docs/SPEC.md 13.13）：只顯示目前這組跨頁
+    cur: 0,          // 翻頁模式下目前所在頁（0 起算）：跳轉時是目標那頁，不換成跨頁的第一頁 ——
+                     // 雙頁時章首常在右頁，換成左頁就會被算成上一章（章名、Home／End 都錯）
+    spreads: [],
+    pageLayout: '',  // PDF 的 /PageLayout，決定雙頁怎麼配對
     pendingSync: null, // 書籤還沒讀好時送來的同步要求，讀好再做
     toc: [],         // 書籤攤平：[{label, level, page, ratio}]，page 從 1 開始；對不到頁的 page 為 null
     text: null,      // 全文，抽完才有：{pages: [textContent…], strings: [每頁字串], full, starts: [每頁在 full 的起點], hasText}
@@ -68,6 +73,8 @@
         return { w: vp.width, h: vp.height };
       })));
     if (gen !== P.gen) return;
+    try { P.pageLayout = (await doc.getPageLayout()) || ''; } catch (e) { P.pageLayout = ''; }
+    if (gen !== P.gen) return;
 
     const root = content.querySelector('#mb-pdf');
     P.pages = sizes.map((s) => {
@@ -80,7 +87,9 @@
     scaleBoxes();
 
     const target = keep || payload.position;
-    if (target && typeof target.page === 'number') restore(target);
+    P.paged = BK.layout !== 'scroll';
+    if (P.paged) { P.cur = target && typeof target.page === 'number' ? target.page - 1 : 0; layoutPaged(); }
+    else if (target && typeof target.page === 'number') restore(target);
     else window.scrollTo(0, 0);
 
     P.observer = new IntersectionObserver(onIntersect, { rootMargin: '150% 0px' });
@@ -98,6 +107,9 @@
     P.observer = null;
     P.pages.forEach(release);
     P.pages = [];
+    P.paged = false;
+    document.documentElement.classList.remove('mb-pdf-paged');
+    indicator.hidden = true;
     P.near.clear();
     P.text = null;
     P.hlPayload = null;
@@ -281,10 +293,14 @@
   function land(at, req, note) {
     const p = P.pages[at.page - 1];
     if (!p) return;
-    const rect = p.box.getBoundingClientRect();
     const background = !!req.background;
-    window.scrollTo({ top: Math.max(0, window.scrollY + rect.top + at.top * rect.height - (at.boxes ? 80 : 12)),
-      behavior: background ? 'auto' : 'smooth' });
+    if (P.paged) {
+      goToPage(at.page - 1);
+    } else {
+      const rect = p.box.getBoundingClientRect();
+      window.scrollTo({ top: Math.max(0, window.scrollY + rect.top + at.top * rect.height - (at.boxes ? 80 : 12)),
+        behavior: background ? 'auto' : 'smooth' });
+    }
     const show = () => {
       if (at.boxes) at.boxes.forEach((b) => flashBox(P.pages[b.page - 1], b.rect));
       else flashBox(p, null, at.top);
@@ -421,6 +437,7 @@
     if (!hit) return;
     hit.els.forEach((el) => el.classList.add('mb-current'));
     if (!jump) return;
+    if (P.paged) { goToPage(hit.page - 1); return; }
     // 放到畫面中間，跟心得的搜尋一樣
     const rect = P.pages[hit.page - 1].box.getBoundingClientRect();
     window.scrollTo({ top: Math.max(0, window.scrollY + rect.top + hit.top * rect.height - window.innerHeight / 2),
@@ -455,6 +472,12 @@
   /* 目前所在章：畫面頂端往下 120px 那一點之前，最後一個開始的書籤（跟 EPUB 捲動模式同一個基準） */
   BK.pdfChapter = function () {
     if (!P.toc.length || !P.pages.length) return null;
+    // 翻頁模式以目前所在頁為準（同 13.9 的 fx.page）
+    if (P.paged) {
+      let at = null;
+      P.toc.forEach((t, i) => { if (t.page != null && t.page <= P.cur + 1) at = i; });
+      return at ?? P.toc.findIndex((t) => t.page != null);
+    }
     const y = window.scrollY + 120;
     let found = null;
     P.toc.forEach((t, i) => {
@@ -591,6 +614,7 @@
   /* ── 畫頁 ───────────────────────────────────────────── */
 
   function onIntersect(entries) {
+    if (P.paged) return;        // 翻頁模式自己決定畫哪幾頁（layoutPaged）
     for (const e of entries) {
       const index = P.pages.findIndex((p) => p.box === e.target);
       if (index === -1) continue;
@@ -600,7 +624,8 @@
 
   async function draw(index) {
     const p = P.pages[index];
-    const width = p.box.clientWidth;
+    // 翻頁模式下前後那組是隱藏的，量不到寬度，用排版時算好的
+    const width = P.paged ? Math.round(p.cssWidth || 0) : p.box.clientWidth;
     if (!width || (p.canvas && p.drawnWidth === width) || !P.doc) return;
     const gen = P.gen;
     if (p.task) p.task.cancel();
@@ -633,8 +658,8 @@
   /* 文字層的字級與位置都跟著 --total-scale-factor（CSS px／PDF pt）走，欄寬改變時只要改這個值，
    * 不必重建。先全部量完再一起寫，免得每寫一次就逼 WebKit 重排一次 */
   function scaleBoxes() {
-    const widths = P.pages.map((p) => p.box.clientWidth);
-    P.pages.forEach((p, i) => p.box.style.setProperty('--total-scale-factor', widths[i] / p.w));
+    const widths = P.pages.map((p) => (P.paged ? p.cssWidth || 0 : p.box.clientWidth));
+    P.pages.forEach((p, i) => { if (widths[i]) p.box.style.setProperty('--total-scale-factor', widths[i] / p.w); });
   }
 
   async function drawText(index) {
@@ -692,6 +717,8 @@
   let resizeTimer = null;
   window.addEventListener('resize', () => {
     if (!BK.active || !BK.pdf) return;
+    // 翻頁模式：頁框是固定尺寸，停下來再重算比例、重畫
+    if (P.paged) { clearTimeout(resizeTimer); resizeTimer = setTimeout(layoutPaged, 150); return; }
     scaleBoxes();
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => P.near.forEach(draw), 200);
@@ -701,6 +728,7 @@
    * 欄寬一變頁高就變，存像素回不到同一個地方（docs/SPEC.md 13.13）。 */
 
   BK.pdfAnchor = function () {
+    if (P.paged) return P.pages.length ? { page: P.cur + 1, ratio: 0 } : null;
     for (let i = 0; i < P.pages.length; i++) {
       const rect = P.pages[i].box.getBoundingClientRect();
       if (rect.bottom > 0) {
@@ -714,8 +742,134 @@
   function restore(anchor) {
     const p = P.pages[Math.min(P.pages.length, Math.max(1, anchor.page)) - 1];
     if (!p) return;
+    if (P.paged) { goToPage(P.pages.indexOf(p)); return; }
     const rect = p.box.getBoundingClientRect();
     window.scrollTo(0, window.scrollY + rect.top + (anchor.ratio || 0) * rect.height);
   }
   BK.pdfRestore = (anchor) => { if (anchor && typeof anchor.page === 'number') restore(anchor); };
+
+  /* ── 單頁、雙頁（docs/SPEC.md 13.13）──────────────────────────
+   * 沿用捲動模式的頁框，只改排法：只顯示目前這組跨頁，其他隱藏，顯示中的縮放到整頁塞進欄裡。
+   * canvas、文字層、標記、命中框都掛在頁框裡，不必重建。直接換頁、沒有動畫（同 13.9）。 */
+
+  const indicator = document.createElement('div');
+  indicator.className = 'mb-pdf-indicator';
+  indicator.hidden = true;
+  document.body.appendChild(indicator);
+
+  /* 選了雙頁、而且每頁不小於約 400pt 才跨頁（同 13.9） */
+  function useSpread() {
+    return BK.layout === 'double' && content.clientWidth / 2 >= 400;
+  }
+
+  /* 雙頁怎麼配對：PDF 自己宣告的 /PageLayout 優先 —— TwoPageLeft 從第 1 頁成對、TwoPageRight
+   * 封面單獨；沒寫就照 13.9 封面單獨、之後兩兩成對（PDF 書多半由紙本或 EPUB 轉來，有封面） */
+  function spreadsFor(spread) {
+    const n = P.pages.length, out = [];
+    if (!spread) { for (let i = 0; i < n; i++) out.push([i]); return out; }
+    let i = 0;
+    if (P.pageLayout !== 'TwoPageLeft' && n) { out.push([0]); i = 1; }
+    for (; i < n; i += 2) out.push(i + 1 < n ? [i, i + 1] : [i]);
+    return out;
+  }
+
+  function layoutPaged() {
+    document.documentElement.classList.toggle('mb-pdf-paged', P.paged);
+    if (!P.pages.length) return;
+    if (!P.paged) {
+      P.pages.forEach((p) => { p.box.classList.remove('mb-off'); p.box.style.width = ''; p.cssWidth = 0; });
+      indicator.hidden = true;
+      scaleBoxes();
+      return;
+    }
+    P.spreads = spreadsFor(useSpread());
+    let si = P.spreads.findIndex((sp) => sp.includes(P.cur));
+    if (si === -1) si = 0;
+    const spread = P.spreads[si];
+    const availW = content.clientWidth - 24, availH = window.innerHeight - 52;
+    const fit = (sp) => Math.min(availW / sp.reduce((sum, i) => sum + P.pages[i].w, 0),
+      availH / Math.max(...sp.map((i) => P.pages[i].h)));
+    // 前後各一組也先排好尺寸、畫起來：翻過去才不會先白一下
+    const keep = new Set();
+    for (const k of [si - 1, si, si + 1]) {
+      const sp = P.spreads[k];
+      if (!sp) continue;
+      const scale = fit(sp);
+      for (const i of sp) { P.pages[i].cssWidth = P.pages[i].w * scale; keep.add(i); }
+    }
+    P.pages.forEach((p, i) => {
+      const show = spread.includes(i);
+      p.box.classList.toggle('mb-off', !show);
+      p.box.style.width = show ? p.cssWidth + 'px' : '';
+    });
+    for (const i of [...P.near]) if (!keep.has(i)) { P.near.delete(i); release(P.pages[i]); }
+    scaleBoxes();
+    keep.forEach((i) => { P.near.add(i); draw(i); drawText(i); });
+    const last = spread[spread.length - 1];
+    indicator.textContent = (spread.length > 1 ? `${spread[0] + 1}–${last + 1}` : `${spread[0] + 1}`) + `／${P.pages.length}`;
+    indicator.hidden = false;
+  }
+
+  /* 翻到某一頁所在的跨頁（跳轉用：目錄、同步、搜尋、側欄點標記） */
+  function goToPage(index) {
+    P.cur = Math.max(0, Math.min(P.pages.length - 1, index));
+    layoutPaged();
+    BK.reportPosition(false);
+  }
+
+  /* 使用者翻頁：跨過章界時心得跟著換（turned，同 13.9） */
+  BK.pdfTurn = function (step) {
+    if (!P.paged || !P.spreads.length) return;
+    const si = P.spreads.findIndex((sp) => sp.includes(P.cur));
+    const next = Math.max(0, Math.min(P.spreads.length - 1, si + step));
+    if (next === si) return;
+    P.cur = P.spreads[next][0];
+    layoutPaged();
+    BK.reportPosition(true);
+  };
+
+  /* Home／End：本章第一頁／最後一頁；沒有書籤就是全書首尾 */
+  BK.pdfEdge = function (dir) {
+    const ch = BK.pdfChapter();
+    let target;
+    if (ch == null || ch === -1) target = dir < 0 ? 0 : P.pages.length - 1;
+    else {
+      const [from, to] = chapterPages(ch);
+      // chapterPages 的結尾是下一章所在頁；那頁屬於下一章，就停在前一頁
+      const nextStarts = P.toc.some((t, i) => i > ch && t.page === to && to > from);
+      target = dir < 0 ? from - 1 : (nextStarts ? to - 2 : to - 1);
+    }
+    P.cur = Math.max(0, target);
+    layoutPaged();
+    BK.reportPosition(true);
+  };
+
+  /* 側欄點標記等「把某個元素帶進畫面」：翻到它所在的頁 */
+  BK.pdfReveal = function (el) {
+    const box = el && el.closest && el.closest('.mb-pdf-page');
+    const i = P.pages.findIndex((p) => p.box === box);
+    if (i !== -1) goToPage(i);
+  };
+
+  /* 三選一切換：停在同一頁 */
+  BK.pdfSetLayout = function () {
+    if (!P.pages.length) return;          // 還沒排好：renderPdf 會照 BK.layout 排
+    const anchor = BK.pdfAnchor();
+    const paged = BK.layout !== 'scroll';
+    if (paged === P.paged && !paged) return;
+    P.paged = paged;
+    if (paged) {
+      P.cur = anchor ? anchor.page - 1 : 0;
+      window.scrollTo(0, 0);
+      layoutPaged();
+    } else {
+      layoutPaged();
+      if (anchor) restore(anchor);
+      // 回到捲動模式：重新交給 IntersectionObserver 決定畫哪幾頁
+      P.near.forEach((i) => release(P.pages[i]));
+      P.near.clear();
+      if (P.observer) { P.observer.disconnect(); P.pages.forEach((p) => P.observer.observe(p.box)); }
+    }
+    BK.reportPosition(false);
+  };
 })();
