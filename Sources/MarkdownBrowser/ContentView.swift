@@ -145,7 +145,7 @@ struct Sidebar: View {
             }
 
             // 單獨開書：側欄下半是書的目錄（docs/SPEC.md 13.1）
-            if state.documentURL == nil, state.book.epub != nil {
+            if state.documentURL == nil, state.book.title != nil {
                 Section("目錄") {
                     BookContents(state: state, book: state.book)
                 }

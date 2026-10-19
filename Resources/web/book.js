@@ -707,8 +707,8 @@
   }
 
   MB.scrollToChapter = function (index) {
-    if (BK.pdf) return;
     BK.navigatedAt = Date.now();
+    if (BK.pdf) { BK.pdfScrollToChapter(index); return; }
     if (BK.fixed) { gotoChapterPage(index, false); return; }
     const range = chapterRange(index);
     if (range) { I().reveal(range.start, true); I().settleOn(range.start); }
@@ -859,7 +859,7 @@
       return;
     }
     if (BK.pdf) {
-      const msg = { type: 'bookPosition', chapter: null, turned: false };
+      const msg = { type: 'bookPosition', chapter: BK.pdfChapter(), turned: false };
       if (!initial) msg.position = BK.pdfAnchor() || {};
       toSwift(msg);
       return;

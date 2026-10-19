@@ -114,6 +114,9 @@ struct WebPane: NSViewRepresentable {
             case "bookPosition":
                 state.positionChanged(body)
 
+            case "bookToc":
+                (state as? BookPane)?.setPdfToc(body["toc"] as? [[String: Any]] ?? [])
+
             case "pageKey":
                 guard let key = body["key"] as? String else { return }
                 (state as? DocumentState)?.forwardPageKey(key, shift: body["shift"] as? Bool ?? false)

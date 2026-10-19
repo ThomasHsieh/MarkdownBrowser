@@ -115,19 +115,23 @@ private struct BookColumn: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if book.epub != nil {
+            // PDF 沒有書籤就不放下拉選單（docs/SPEC.md 13.13）
+            if book.epub != nil || (book.pdf != nil && !book.pdfToc.isEmpty) {
                 HStack(spacing: 8) {
                     BookChapterMenu(state: state, book: book)
                         .frame(height: 26)
-                    // 捲動｜單頁｜雙頁（docs/SPEC.md 13.12）。固定版面的書「捲動」當作單頁
-                    Picker("", selection: $state.bookLayout) {
-                        ForEach(BookLayout.allCases, id: \.self) { Text($0.name).tag($0) }
+                    // 捲動｜單頁｜雙頁（docs/SPEC.md 13.12）。固定版面的書「捲動」當作單頁。
+                    // PDF 目前只有捲動模式
+                    if book.epub != nil {
+                        Picker("", selection: $state.bookLayout) {
+                            ForEach(BookLayout.allCases, id: \.self) { Text($0.name).tag($0) }
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .controlSize(.small)
+                        .fixedSize()
+                        .help("書的顯示方式：捲動、單頁、雙頁")
                     }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .controlSize(.small)
-                    .fixedSize()
-                    .help("書的顯示方式：捲動、單頁、雙頁")
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 3)
@@ -154,10 +158,10 @@ struct BookTocRow: Identifiable {
 
 @MainActor
 func bookTocRows(book: BookPane, map: ChapterMap) -> [BookTocRow] {
-    guard let epub = book.epub else { return [] }
+    let toc = book.toc
     var rows: [BookTocRow] = []
     let current = book.currentChapter
-    for (i, entry) in epub.toc.enumerated() {
+    for (i, entry) in toc.enumerated() {
         let mapped = i < map.targets.count && map.targets[i] != nil
         rows.append(BookTocRow(id: "c\(i)", kind: .chapter(i), label: entry.label,
                                indent: entry.level - 1, mapped: mapped, current: i == current))
@@ -198,8 +202,9 @@ private struct BookChapterMenu: NSViewRepresentable {
         let coordinator = context.coordinator
         coordinator.book = book
         coordinator.rows = bookTocRows(book: book, map: state.chapterMap)
-        let current = book.currentChapter.flatMap { i in book.epub?.toc.indices.contains(i) == true ? book.epub?.toc[i].label : nil }
-        button.title = current ?? book.epub?.title ?? ""
+        let toc = book.toc
+        let current = book.currentChapter.flatMap { i in toc.indices.contains(i) ? toc[i].label : nil }
+        button.title = current ?? book.title ?? ""
         button.toolTip = "跳到某一章；有圓點的章有對應的心得"
     }
 
@@ -211,6 +216,8 @@ private struct BookChapterMenu: NSViewRepresentable {
         @objc func show(_ sender: NSButton) {
             let menu = NSMenu()
             menu.autoenablesItems = false
+            // 一章都沒對到（單獨開書、沒有心得）就不分灰與圓點：全部變灰只會看不清楚，分不出什麼
+            let anyMapped = rows.contains { $0.mapped }
             for (index, row) in rows.enumerated() {
                 let item = NSMenuItem(title: row.label, action: #selector(pick(_:)), keyEquivalent: "")
                 item.target = self
@@ -220,14 +227,15 @@ private struct BookChapterMenu: NSViewRepresentable {
                 let isHeading: Bool
                 if case .heading = row.kind { isHeading = true } else { isHeading = false }
                 let title = NSMutableAttributedString()
-                if !isHeading {
+                if !isHeading && anyMapped {
                     // 有心得的章標一個圓點；沒有的變灰，但仍可點（只捲書）
                     title.append(NSAttributedString(string: row.mapped ? "● " : "　",
                                                     attributes: [.foregroundColor: NSColor.systemOrange,
                                                                  .font: NSFont.systemFont(ofSize: 9)]))
                 }
                 title.append(NSAttributedString(string: row.label, attributes: [
-                    .foregroundColor: row.mapped || isHeading ? NSColor.labelColor : NSColor.tertiaryLabelColor,
+                    // tertiary 在深色選單上淡到讀不出來，用 secondary
+                    .foregroundColor: row.mapped || isHeading || !anyMapped ? NSColor.labelColor : NSColor.secondaryLabelColor,
                     .font: NSFont.systemFont(ofSize: isHeading ? 12 : 13),
                 ]))
                 item.attributedTitle = title
@@ -253,6 +261,11 @@ struct BookContents: View {
     @ObservedObject var book: BookPane
 
     var body: some View {
+        if book.pdf != nil && book.pdfTocLoaded && book.pdfToc.isEmpty {
+            Text("沒有目錄")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+        }
         ForEach(bookTocRows(book: book, map: state.chapterMap)) { row in
             let isHeading: Bool = { if case .heading = row.kind { return true } else { return false } }()
             Text(row.label)

@@ -14,6 +14,10 @@ final class BookPane: PaneDocument {
 
     @Published private(set) var epub: EpubBook?
     @Published private(set) var pdf: PdfBook?
+    /// PDF 的書籤，網頁端用 pdf.js 讀出來再送過來（EPUB 的目錄在 Swift 這邊就解析好了）
+    @Published private(set) var pdfToc: [EpubBook.TocEntry] = []
+    /// 書籤送來了沒：還沒送來時側欄不要先顯示「沒有目錄」
+    @Published private(set) var pdfTocLoaded = false
     @Published private(set) var loadError: String?
 
     /// 目前所在章（`EpubBook.toc` 的索引），網頁端捲動時回報。
@@ -23,6 +27,9 @@ final class BookPane: PaneDocument {
 
     /// 書名：EPUB 的 `dc:title`、PDF 的 Title 中繼資料（沒有就是檔名）
     var title: String? { epub?.title ?? pdf?.title }
+
+    /// 書的目錄：EPUB 的 nav，或 PDF 的書籤。章的索引一律指這個陣列
+    var toc: [EpubBook.TocEntry] { epub?.toc ?? pdfToc }
 
     // MARK: - 開檔
 
@@ -35,6 +42,8 @@ final class BookPane: PaneDocument {
     override func didUnload() {
         epub = nil
         pdf = nil
+        pdfToc = []
+        pdfTocLoaded = false
         loadError = nil
         currentChapter = nil
         bridge?.setBook(nil)
@@ -52,6 +61,8 @@ final class BookPane: PaneDocument {
     private func parse(_ url: URL) {
         epub = nil
         pdf = nil
+        pdfToc = []
+        pdfTocLoaded = false
         do {
             if BookPairing.isPDF(url) { pdf = try PdfBook(url: url) } else { epub = try EpubBook(url: url) }
             loadError = nil
@@ -128,6 +139,17 @@ final class BookPane: PaneDocument {
     }
 
     // MARK: - 網頁端的互動
+
+    /// PDF 的書籤讀好了（沒有書籤也會送一個空的來）
+    func setPdfToc(_ raw: [[String: Any]]) {
+        guard pdf != nil else { return }
+        pdfToc = raw.compactMap { item in
+            guard let label = item["label"] as? String, let level = item["level"] as? Int else { return nil }
+            return EpubBook.TocEntry(label: label, path: PdfBook.resourcePath, fragment: nil, level: level)
+        }
+        pdfTocLoaded = true
+        host?.bookTocChanged()
+    }
 
     override func headingClicked(id: String, text: String, level: Int, chapter: Int?, isChapterTitle: Bool) {
         guard let chapter else { return }

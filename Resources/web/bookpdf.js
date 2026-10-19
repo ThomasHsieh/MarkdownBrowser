@@ -33,6 +33,7 @@
     pages: [],       // [{w, h, box, canvas, task, drawnWidth, layer}]
     observer: null,
     near: new Set(), // 在畫面附近、該畫的頁
+    toc: [],         // 書籤攤平：[{label, level, page, ratio}]，page 從 1 開始；對不到頁的 page 為 null
     text: null,      // 全文，抽完才有：{pages: [textContent…], strings: [每頁字串], full, starts: [每頁在 full 的起點], hasText}
   };
 
@@ -86,7 +87,8 @@
     P.pages.forEach((p) => P.observer.observe(p.box));
     I().toSwift({ type: 'bookPosition', chapter: null, turned: false });
 
-    // 第一頁先畫，全文在背景抽；標記、引文、搜尋都等這份
+    // 第一頁先畫，書籤與全文在背景讀；標記、引文、搜尋都等全文
+    loadOutline(doc, gen);
     extractText(doc, gen, !opts.keepScroll);
   };
 
@@ -98,10 +100,79 @@
     P.pages = [];
     P.near.clear();
     P.text = null;
+    P.toc = [];
     if (P.doc) P.doc.destroy();
     P.doc = null;
   }
   BK.pdfTeardown = teardown;
+
+  /* ── 書籤（docs/SPEC.md 13.13）──────────────────────────────
+   * 攤平成一列，順序與層級照書籤樹，跟 EPUB 的 nav 一樣當「章」用。每一項解析到第幾頁、
+   * 頁內多高，所在章與跳到某章都靠這個。沒有書籤也送一個空的給 Swift：側欄才知道要寫「沒有目錄」。 */
+
+  async function loadOutline(doc, gen) {
+    let outline = null;
+    try { outline = await doc.getOutline(); } catch (e) { /* 當作沒有書籤 */ }
+    const flat = [];
+    const walk = (items, level) => (items || []).forEach((it) => {
+      flat.push({ label: (it.title || '').trim(), level, dest: it.dest });
+      walk(it.items, level + 1);
+    });
+    walk(outline, 1);
+    const toc = [];
+    for (const item of flat) {
+      const at = await resolveDest(doc, item.dest);
+      if (gen !== P.gen) return;
+      toc.push({ label: normalizeText(item.label), level: item.level, page: at ? at.page : null, ratio: at ? at.ratio : 0 });
+    }
+    P.toc = toc;
+    I().toSwift({ type: 'bookToc', toc: toc.map(({ label, level }) => ({ label, level })) });
+    // 開檔時回報的位置還不知道章，書籤讀好再報一次
+    I().toSwift({ type: 'bookPosition', chapter: BK.pdfChapter(), turned: false });
+  }
+
+  /* 書籤的目的地：具名的先查表；第一個元素是頁的參照（或頁碼），XYZ／FitH 帶著頁內高度 */
+  async function resolveDest(doc, dest) {
+    try {
+      if (typeof dest === 'string') dest = await doc.getDestination(dest);
+      if (!Array.isArray(dest)) return null;
+      const ref = dest[0];
+      const index = ref && typeof ref === 'object' ? await doc.getPageIndex(ref)
+        : Number.isInteger(ref) ? ref : null;
+      const p = index == null ? null : P.pages[index];
+      if (!p) return null;
+      const kind = dest[1] && dest[1].name;
+      const top = kind === 'XYZ' ? dest[3] : (kind === 'FitH' || kind === 'FitBH') ? dest[2] : null;
+      // PDF 的 y 由下往上量
+      const ratio = typeof top === 'number' ? Math.min(1, Math.max(0, 1 - top / p.h)) : 0;
+      return { page: index + 1, ratio };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /* 目前所在章：畫面頂端往下 120px 那一點之前，最後一個開始的書籤（跟 EPUB 捲動模式同一個基準） */
+  BK.pdfChapter = function () {
+    if (!P.toc.length || !P.pages.length) return null;
+    const y = window.scrollY + 120;
+    let found = null;
+    P.toc.forEach((t, i) => {
+      if (t.page == null) return;
+      const box = P.pages[t.page - 1].box;
+      const top = box.getBoundingClientRect().top + window.scrollY + t.ratio * box.offsetHeight;
+      if (top <= y) found = i;
+    });
+    if (found == null) found = P.toc.findIndex((t) => t.page != null);
+    return found === -1 ? null : found;
+  };
+
+  /* 下拉選單或側欄選了某一章：捲到書籤指的地方，頂端留一點空 */
+  BK.pdfScrollToChapter = function (index) {
+    const t = P.toc[index];
+    if (!t || t.page == null) return;
+    restore({ page: t.page, ratio: t.ratio });
+    window.scrollBy(0, -12);
+  };
 
   /* ── 全文 ───────────────────────────────────────────────
    * 每頁的 textContent 逐字正規化後留著：全文拿來比對、搜尋，之後文字層也用同一份畫，

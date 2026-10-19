@@ -1114,6 +1114,7 @@ OPF 宣告 `rendition:layout` 為 `pre-paginated` 的書。現有 14 本全部�
 | Swift → JS | `MB.toast(text)` | 「這一章還沒有心得」之類的短暫提示 |
 | JS → Swift | `headingClicked` | 內文標題被點，Swift 轉給另一欄；書那欄另帶所在章與「是不是章名」 |
 | JS → Swift | `quoteClicked` | 心得引文裡的一段被點，帶文字與所在小節的標題 id，Swift 算出章再叫書那欄找原句 |
+| JS → Swift | `bookToc` | PDF 的書籤（攤平成 `label`／`level`），pdf.js 讀出來才知道，沒有書籤也送空的。Swift 當成目錄，跟 EPUB 的 nav 一樣用（13.13） |
 | JS → Swift | `bookPosition` | 書目前所在章與位置，給下拉選單、閱讀位置記憶與固定版面的跨章換心得。剛渲染完只報章、不帶位置 —— 版面還沒穩，存下來的會是錯的 |
 | JS → Swift | `pageKey` | 心得那欄攔到的翻頁鍵，Swift 轉給書那欄；焦點不動 |
 | JS → Swift | `scrollKey` | 書那欄（翻頁模式）攔到的捲動鍵，Swift 轉給心得那欄；焦點不動 |

@@ -455,6 +455,11 @@ final class DocumentState: PaneDocument {
         rebuildChapterMap()
     }
 
+    /// PDF 的書籤是開檔之後網頁端才送來的，章節對應要重算
+    func bookTocChanged() {
+        rebuildChapterMap()
+    }
+
     func bookDidUnload() {
         chapterMap = .empty
         pairedNoteLocation = nil
@@ -531,7 +536,7 @@ final class DocumentState: PaneDocument {
     /// 心得資料夾裡屬於同一本書的檔：h1 書名跟目前這份一樣的。
     /// 單檔心得常跟別本書的心得放在同一個資料夾，不能整個資料夾都拿來比。
     private func rebuildChapterMap() {
-        guard let epub = book.epub else { chapterMap = .empty; return }
+        guard book.epub != nil || book.pdf != nil else { chapterMap = .empty; return }
         let folder: URL
         var notes: [URL]
         if let note = documentURL {
@@ -547,7 +552,7 @@ final class DocumentState: PaneDocument {
             chapterMap = .empty
             return
         }
-        chapterMap = ChapterMap.build(toc: epub.toc, notes: notes)
+        chapterMap = ChapterMap.build(toc: book.toc, notes: notes)
     }
 
     // MARK: - 手動指定對應書籍
@@ -700,7 +705,8 @@ final class DocumentState: PaneDocument {
     /// 書的標題被點：心得換到那一章、捲到對應的標題。
     /// 目錄的子項目（「1.1 投資組合存續年數」）多半對不到心得，往上找有對應的上層章。
     private func mappedChapter(_ chapter: Int) -> Int? {
-        guard let toc = book.epub?.toc, chapter >= 0, chapter < toc.count, chapter < chapterMap.targets.count else { return nil }
+        let toc = book.toc
+        guard chapter >= 0, chapter < toc.count, chapter < chapterMap.targets.count else { return nil }
         if chapterMap.targets[chapter] != nil { return chapter }
         var level = toc[chapter].level
         var i = chapter - 1
