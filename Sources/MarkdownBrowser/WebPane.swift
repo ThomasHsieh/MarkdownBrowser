@@ -255,9 +255,9 @@ struct WebPane: NSViewRepresentable {
         func scrollKey(_ key: String) { eval("MB.scrollKey(\(literal(key)))") }
         func setFocusFrame(_ on: Bool) { eval("MB.setFocusFrame(\(on))") }
         func setPaneSwitch(_ on: Bool) { eval("MB.setPaneSwitch(\(on))") }
-        func takeFocus() {
-            guard let webView else { return }
-            webView.window?.makeFirstResponder(webView)
+        @discardableResult func takeFocus() -> Bool {
+            guard let window = webView?.window else { return false }
+            return window.makeFirstResponder(webView)
         }
 
         func printDocument() {

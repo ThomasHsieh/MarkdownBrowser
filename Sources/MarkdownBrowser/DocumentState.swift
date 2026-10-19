@@ -255,6 +255,28 @@ final class DocumentState: PaneDocument {
         sentPaneSwitch[ObjectIdentifier(pane)] = nil
         if pane === self { sentForward = nil } else { sentForwardBook = nil }
         pushLinked()
+        deliverPendingFocus()
+    }
+
+    /// 開檔後鍵盤焦點要落在內文，方向鍵才能直接捲。新視窗的 first responder 預設是
+    /// 側欄，不交出去的話要先點一下內文才有反應。新視窗的網頁還沒放進視窗、還沒
+    /// ready 時交不出去，先記著，等 `paneDidLoad` / `attach` 再交
+    private var pendingFocus: PaneSide?
+
+    private func focusAfterOpen(_ side: PaneSide) {
+        pendingFocus = side
+        deliverPendingFocus()
+    }
+
+    private func deliverPendingFocus() {
+        guard let side = pendingFocus, let b = pane(side).bridge, b.isReady else { return }
+        // 晚一個 runloop 再交：同一輪 SwiftUI 更新裡交出去，可能被它指定的起始焦點蓋掉
+        //（保險，沒實測過不延後的版本）
+        DispatchQueue.main.async { [self] in
+            guard pendingFocus == side, pane(side).bridge?.takeFocus() == true else { return }
+            pendingFocus = nil
+            if isTabbed { selectedTab = side } else { focusedPane = side }
+        }
     }
 
     // MARK: - 視窗
@@ -264,6 +286,7 @@ final class DocumentState: PaneDocument {
         guard self.window !== window else { return }
         self.window = window
         pushAppearance()
+        deliverPendingFocus()
     }
 
     func bringToFront() {
@@ -295,7 +318,9 @@ final class DocumentState: PaneDocument {
     /// 這是使用者指定的開檔（選單、Finder、側欄），開的那一邊成為主角。
     func open(_ url: URL) {
         let resolved = url.resolvingSymlinksInPath()
-        if BookPairing.isEpub(resolved) { openBookAsPrimary(resolved) } else { openNote(resolved, primary: true) }
+        let side: PaneSide = BookPairing.isEpub(resolved) ? .book : .note
+        if side == .book { openBookAsPrimary(resolved) } else { openNote(resolved, primary: true) }
+        focusAfterOpen(side)
     }
 
     func openNote(_ url: URL, primary: Bool, then done: (() -> Void)? = nil) {
@@ -844,7 +869,8 @@ protocol WebBridge: AnyObject {
     func scrollKey(_ key: String)
     func setFocusFrame(_ on: Bool)
     func setPaneSwitch(_ on: Bool)
-    func takeFocus()
+    /// 交不出去（網頁還沒放進視窗）時回傳 false
+    @discardableResult func takeFocus() -> Bool
     func revealPendingSync()
     func toast(_ text: String)
 }
