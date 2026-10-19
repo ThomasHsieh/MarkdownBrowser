@@ -30,7 +30,7 @@
     pages: [],       // [{w, h, box, canvas, task, drawnWidth}]
     observer: null,
     near: new Set(), // 在畫面附近、該畫的頁
-    text: null,      // 全文，抽完才有：{pages: [textContent…], strings: [每頁字串], full, starts: [每頁在 full 的起點]}
+    text: null,      // 全文，抽完才有：{pages: [textContent…], strings: [每頁字串], full, starts: [每頁在 full 的起點], hasText}
   };
 
   /* ── 開檔 ───────────────────────────────────────────── */
@@ -83,7 +83,7 @@
     I().toSwift({ type: 'bookPosition', chapter: null, turned: false });
 
     // 第一頁先畫，全文在背景抽；標記、引文、搜尋都等這份
-    extractText(doc, gen);
+    extractText(doc, gen, !opts.keepScroll);
   };
 
   function teardown() {
@@ -103,7 +103,7 @@
    * 每頁的 textContent 逐字正規化後留著：全文拿來比對、搜尋，之後文字層也用同一份畫，
    * 兩邊的字一定一樣，位置才對得上（docs/SPEC.md 13.13）。 */
 
-  async function extractText(doc, gen) {
+  async function extractText(doc, gen, announce) {
     const pages = [], strings = [], starts = [];
     let full = '';
     for (let i = 1; i <= doc.numPages; i++) {
@@ -121,8 +121,15 @@
       starts.push(full.length);
       full += str;
     }
-    P.text = { pages, strings, full, starts };
+    const hasText = full.replace(/\s/g, '').length >= doc.numPages * MIN_CHARS_PER_PAGE;
+    P.text = { pages, strings, full, starts, hasText };
+    // 重載（檔案被換掉）不再講一次
+    if (!hasText && announce) MB.toast('這份 PDF 沒有文字，不能標記與搜尋');
   }
+
+  /* 每頁平均不到這麼多字（不算空白）就當作沒有文字層。實測每頁一張圖的書抽到 0 字，
+   * 文字書每頁平均 500 字以上；掃描書頂多抽到頁碼，有圖說的圖片書每頁十幾二十字仍算有字 */
+  const MIN_CHARS_PER_PAGE = 10;
 
   /* calibre 加 macOS 宋體輸出的 PDF，ToUnicode 常指錯碼位：看起來是「大家」，抽出來是康熙部首
    * 「⼤家」，問號是直排標點「︖」。只轉這幾個區段，而且轉完仍是一個字才換 —— 一對一，
