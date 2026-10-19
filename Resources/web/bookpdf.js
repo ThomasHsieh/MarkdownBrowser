@@ -101,6 +101,7 @@
     P.pages = [];
     P.near.clear();
     P.text = null;
+    P.quoteAll = null;   // 全書的引文比對用字串，第一次找全書時才建
     P.toc = [];
     P.pendingSync = null;
     P.tocLoaded = false;
@@ -136,12 +137,12 @@
     I().toSwift({ type: 'bookPosition', chapter: BK.pdfChapter(), turned: false });
   }
 
-  /* 心得帶動書（docs/SPEC.md 13.13）：同步只到章，捲到那一章的書籤。
-   * 換心得或剛開檔時，Swift 送來的同步可能比書籤先到，先存著 */
+  /* 心得帶動書（docs/SPEC.md 13.13）：章靠書籤，小節靠標題關鍵詞，引文找原句。
+   * 換心得或剛開檔時，Swift 送來的同步可能比書籤、全文先到，先存著 */
   BK.pdfSyncTo = function (req) {
-    // 要搜全文的同步還得等全文抽完
-    const wantsText = req.text && !req.quiet && P.text == null;
+    const wantsText = (req.quote || (req.text && !req.quiet)) && P.text == null;
     if (!P.tocLoaded || wantsText) { P.pendingSync = req; return; }
+    if (req.quote) { syncQuote(req); return; }
     const chapter = (req.chapters || []).find((i) => P.toc[i] && P.toc[i].page != null);
     if (chapter == null) {
       if (!P.toc.length) MB.toast('這份 PDF 沒有目錄');
@@ -149,16 +150,39 @@
     }
     // 點的是小節標題：拿標題文字去這一章的全文找，跟 EPUB「標題對不到」的退路一樣（docs/SPEC.md 13.6）。
     // 點的是章名（quiet）就不找，章首正是要去的地方
-    if (req.text && !req.quiet && P.text && P.text.hasText) {
-      const hit = keywordInChapter(chapter, req.text);
-      if (hit) { land(hit, req, `依關鍵詞「${hit.word}」對到內文`); return; }
+    if (req.text && !req.quiet && P.text.hasText) {
+      const { text, where } = keyText(pagesOf([chapter]), (c) => (/\s/.test(c) ? '' : c));
+      const word = BK.longestKeyword(text, req.text);
+      if (word) { land(spot(where, text.indexOf(word), word.length), req, `依關鍵詞「${word}」對到內文`); return; }
     }
-    const t = P.toc[chapter];
-    // 引文比對還沒做：先到那一章開頭
-    const miss = req.quote ? 'PDF 還不能比對引文，已跳到這一章開頭'
-      : req.text && !req.quiet ? '找不到對應小節，已跳到章首' : null;
-    land({ page: t.page, top: t.ratio, rect: null }, req, miss);
+    land(chapterStart(chapter), req, req.text && !req.quiet ? '找不到對應小節，已跳到章首' : null);
   };
+
+  /* 引文找原句：比對規則與 EPUB 相同（去標點空白、異體字歸一，book.js 的 quoteFind）。
+   * 先找這一章（含部分對到），才找全書；都找不到退回章首（docs/SPEC.md 13.13） */
+  function syncQuote(req) {
+    const chapters = (req.chapters || []).filter((i) => P.toc[i] && P.toc[i].page != null);
+    const fallback = (note) => {
+      if (chapters.length) land(chapterStart(chapters[0]), req, note + '，已跳到這一章開頭');
+      else MB.toast(note);
+    };
+    if (!P.text.hasText) { fallback('這份 PDF 沒有文字可以比對'); return; }
+    // 引文就是章名（心得檔頭的「選擇2 累積人生籌碼」）：到那一章章首
+    const key = BK.quoteKey(req.quote);
+    const titled = P.toc.findIndex((t) => t.page != null && BK.quoteKey(t.label) === key);
+    if (titled !== -1) { land(chapterStart(titled), req, null); return; }
+
+    const inChapter = chapters.length ? keyText(pagesOf(chapters), BK.quoteChar) : null;
+    let found = inChapter && (BK.quoteFind(inChapter.text, req.quote, false) || BK.quoteFind(inChapter.text, req.quote, true));
+    let src = inChapter;
+    if (!found) {
+      if (!P.quoteAll) P.quoteAll = keyText(P.pages.map((_, i) => i), BK.quoteChar);
+      src = P.quoteAll;
+      found = BK.quoteFind(src.text, req.quote, false) || (!chapters.length && BK.quoteFind(src.text, req.quote, true));
+    }
+    if (!found) { fallback('書裡找不到這段引文'); return; }
+    land(spot(src.where, found.at, found.length), req, found.whole ? null : '書裡沒有完全相同的句子，已跳到最接近的一段');
+  }
 
   function flushPendingSync() {
     if (!P.pendingSync) return;
@@ -178,33 +202,55 @@
     return [start, end];
   }
 
-  /* 標題裡在這一章全文出現的最長一段 → 落點（頁、頁內高度、那幾個字的框） */
-  function keywordInChapter(index, heading) {
-    const [from, to] = chapterPages(index);
-    let text = '';
-    const where = [];               // text 第 k 個字 → [頁 index, 那頁字串裡的位置]
-    for (let pg = from - 1; pg < to; pg++) {
-      const s = P.text.strings[pg];
-      for (let i = 0; i < s.length; i++) {
-        if (/\s/.test(s[i])) continue;
-        text += s[i];
-        where.push([pg, i]);
-      }
+  /* 幾章合起來涵蓋的頁（0 起算、由小到大、不重複） */
+  function pagesOf(chapters) {
+    const set = new Set();
+    for (const c of chapters) {
+      const [from, to] = chapterPages(c);
+      for (let pg = from - 1; pg < to; pg++) set.add(pg);
     }
-    const word = BK.longestKeyword(text, heading);
-    if (!word) return null;
-    const at = text.indexOf(word);
-    const [pg, startOff] = where[at];
-    const [endPg, endOff] = where[at + word.length - 1];
-    const rect = textRect(pg, startOff, endPg === pg ? endOff : P.text.strings[pg].length - 1);
-    return { word, page: pg + 1, top: rect ? rect.top : 0, rect };
+    return [...set].sort((x, y) => x - y);
   }
 
-  /* 頁字串裡 [a, b] 這段字所在 textContent 項目的外框，以頁的比例表示（0～1，由上往下） */
-  function textRect(pg, a, b) {
+  function chapterStart(index) {
+    const t = P.toc[index];
+    return { page: t.page, top: t.ratio, boxes: null };
+  }
+
+  /* 把幾頁的字逐字轉換（mapChar 回傳空字串就丟掉，可能一變多）後串起來，記下每個字出自哪頁哪個位置 */
+  function keyText(pages, mapChar) {
+    let text = '';
+    const where = [];
+    for (const pg of pages) {
+      const s = P.text.strings[pg];
+      for (let i = 0; i < s.length; i++) {
+        const c = mapChar(s[i]);
+        for (const x of c) { text += x; where.push([pg, i]); }
+      }
+    }
+    return { text, where };
+  }
+
+  /* text 裡 [at, at+length) 這段 → 落點：起點所在頁、頁內高度、每一行字的框 */
+  function spot(where, at, length) {
+    const [pg, a] = where[at];
+    const [endPg, b] = where[at + length - 1];
+    const boxes = [];
+    for (let p = pg; p <= endPg; p++) {
+      const from = p === pg ? a : 0;
+      const to = p === endPg ? b : P.text.strings[p].length - 1;
+      for (const rect of lineRects(p, from, to)) boxes.push({ page: p + 1, rect });
+    }
+    return { page: pg + 1, top: boxes.length ? boxes[0].rect.top : 0, boxes };
+  }
+
+  /* 頁字串裡 [a, b] 這段字的框，一行一個，以頁的比例表示（0～1，由上往下）。
+   * 引文常跨好幾行，合成一個大框會連旁邊沒選到的字一起閃 */
+  function lineRects(pg, a, b) {
     const items = P.text.pages[pg].items;
     const p = P.pages[pg];
-    let off = 0, box = null;
+    const lines = [];
+    let off = 0;
     for (const item of items) {
       const len = (item.str || '').length + (item.hasEOL ? 1 : 0);
       const s = off, e = off + len - 1;
@@ -217,10 +263,16 @@
       const from = (Math.max(a, s) - s) / n, to = Math.min(n, Math.min(b, e) - s + 1) / n;
       const r = { left: (x + item.width * from) / p.w, right: (x + item.width * to) / p.w,
         top: 1 - (y + h) / p.h, bottom: 1 - y / p.h };
-      box = box ? { left: Math.min(box.left, r.left), right: Math.max(box.right, r.right),
-        top: Math.min(box.top, r.top), bottom: Math.max(box.bottom, r.bottom) } : r;
+      // 同一行（垂直方向重疊過半）的項目併成一個框
+      const line = lines.find((l) => Math.min(l.bottom, r.bottom) - Math.max(l.top, r.top) > (r.bottom - r.top) / 2);
+      if (line) {
+        line.left = Math.min(line.left, r.left); line.right = Math.max(line.right, r.right);
+        line.top = Math.min(line.top, r.top); line.bottom = Math.max(line.bottom, r.bottom);
+      } else {
+        lines.push(r);
+      }
     }
-    return box;
+    return lines;
   }
 
   /* 捲到落點、閃一下。有字框就閃那幾個字，沒有（章首）就閃書籤底下一條。
@@ -230,9 +282,13 @@
     if (!p) return;
     const rect = p.box.getBoundingClientRect();
     const background = !!req.background;
-    window.scrollTo({ top: Math.max(0, window.scrollY + rect.top + at.top * rect.height - (at.rect ? 80 : 12)),
+    window.scrollTo({ top: Math.max(0, window.scrollY + rect.top + at.top * rect.height - (at.boxes ? 80 : 12)),
       behavior: background ? 'auto' : 'smooth' });
-    const show = () => { flashBox(p, at.rect, at.top); if (note) MB.toast(note); };
+    const show = () => {
+      if (at.boxes) at.boxes.forEach((b) => flashBox(P.pages[b.page - 1], b.rect));
+      else flashBox(p, null, at.top);
+      if (note) MB.toast(note);
+    };
     if (background) I().setPendingSync(show);
     else setTimeout(show, 450);
   }

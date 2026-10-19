@@ -640,11 +640,19 @@
   }
 
   function quoteHit(ranges, quote, partial) {
+    if (!quoteKey(quote)) return null;
+    const { text, where } = chapterText(ranges, quoteChar);
+    const f = BK.quoteFind(text, quote, partial);
+    return f ? { range: rangeOf(where, f.at, f.length), whole: f.whole } : null;
+  }
+
+  /* 在已經逐字 quoteChar 過的 text 裡找引文：完整出現，或（partial）最長的一段重疊 ——
+   * 至少 8 個字、也至少佔引文四成。PDF 那邊也用（bookpdf.js） */
+  BK.quoteFind = function (text, quote, partial) {
     const q = quoteKey(quote);
     if (!q) return null;
-    const { text, where } = chapterText(ranges, quoteChar);
     const at = text.indexOf(q);
-    if (at !== -1) return { range: rangeOf(where, at, q.length), whole: true };
+    if (at !== -1) return { at, length: q.length, whole: true };
     if (!partial || q.length < 8) return null;
     const min = Math.max(8, Math.ceil(q.length * 0.4));
     let best = '', bestAt = -1;
@@ -654,8 +662,10 @@
         if (k !== -1) { best = q.slice(i, j); bestAt = k; break; }
       }
     }
-    return best ? { range: rangeOf(where, bestAt, best.length), whole: false } : null;
-  }
+    return best ? { at: bestAt, length: best.length, whole: false } : null;
+  };
+  BK.quoteChar = quoteChar;
+  BK.quoteKey = quoteKey;
 
   function syncQuote(req) {
     // 固定版面是圖，沒有文字可找：照標題同步的做法翻到那一章
