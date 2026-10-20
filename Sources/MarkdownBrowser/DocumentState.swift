@@ -55,7 +55,7 @@ final class DocumentState: PaneDocument {
         }
     }
 
-    /// 中文字體：`kai`（霞鶩文楷）或 `gothic`（更紗黑體）。
+    /// 中文字體：`kai`（霞鶩文楷）、`gothic`（更紗黑體）、`ming`（源雲明體）、`round`（粉圓）。
     /// 與外觀正交 —— 這個只管用哪套字。
     @Published var fontFamily: String {
         didSet {

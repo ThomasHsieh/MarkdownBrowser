@@ -102,10 +102,12 @@ final class AppSettings: ObservableObject {
         ("dark", "深色"),
     ]
 
-    /// 選單與工具列共用的字體清單。
+    /// 選單與工具列共用的字體清單。快捷鍵照順序是 ⌘3 起算，新字體接在後面，原本的不變。
     static let fontChoices: [(id: String, name: String)] = [
         ("kai", "楷體"),
         ("gothic", "黑體"),
+        ("ming", "明體"),
+        ("round", "圓體"),
     ]
 
     // MARK: 內部
@@ -134,7 +136,9 @@ final class AppSettings: ObservableObject {
     private init() {
         // 舊版存的主題（閱讀／終端機）已合併成唯一一套樣式，不再讀，也不必清
         appearance = defaults.string(forKey: Keys.appearance) ?? "auto"
-        fontFamily = defaults.string(forKey: Keys.fontFamily) ?? "kai"
+        // 存的值不在清單上（以後拿掉某套字體）就回到楷體，免得網頁端拿到沒有對應樣式的值
+        let savedFont = defaults.string(forKey: Keys.fontFamily) ?? ""
+        fontFamily = Self.fontChoices.contains { $0.id == savedFont } ? savedFont : "kai"
         fontSize = defaults.object(forKey: Keys.fontSize) as? Double ?? Self.defaultFontSize
         sidebarVisible = defaults.object(forKey: Keys.sidebar) as? Bool ?? true
         sidebarMode = SidebarMode(rawValue: defaults.string(forKey: Keys.sidebarMode) ?? "") ?? .outline

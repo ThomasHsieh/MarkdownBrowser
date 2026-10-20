@@ -33,8 +33,9 @@ make icons        # 由 AppIcon-v4.png 重建透明書本圖層與 ICNS（通常
 ```
 
 字型不進版控，`make` 時依序找環境變數 `FONTS_DIR` 指的資料夾（有設才找）→ `~/Library/Fonts/`
-→ 官方 release 下載。共四個 Regular 字面：霞鶩文楷（楷體）與更紗黑體（黑體）
-各有比例版與等寬版。Sarasa 官方只提供 7z，那條路需要 `brew install p7zip`。
+→ 官方 release 下載。共六個 Regular 字面：霞鶩文楷（楷體）與更紗黑體（黑體）各有比例版與等寬版，
+另有源雲明體（明體）與 jf open 粉圓（圓體），這兩套的程式碼借更紗等寬。每套都鎖定版本，
+發版前跑 `make fonts-update` 檢查新版。
 
 `make set-default` 會把 `.md` 的預設開啟程式指過來（等同 Finder 的
 「取得資訊 → 打開方式 → 全部更改」）。ad-hoc 簽章的 App 第一次開
@@ -144,6 +145,7 @@ Swift 端只做殼，所有排版都在 CSS 裡，切字體、切明暗只是換
 
 ## 授權
 
-字型 LXGW WenKai TC 與 Sarasa Gothic（皆 SIL OFL 1.1）、
-Markdown 解析 markdown-it（MIT）、EPUB 讀取 ZIPFoundation（MIT）。
-字型的授權條文在 `Resources/fonts/`，ZIPFoundation 的在 `Resources/licenses/`，組 `.app` 時都會一起複製進去。
+字型 LXGW WenKai TC、Sarasa Gothic、源雲明體 GenWanMin2、jf open 粉圓（皆 SIL OFL 1.1）、
+Markdown 解析 markdown-it（MIT）、EPUB 讀取 ZIPFoundation（MIT）、PDF 顯示 pdf.js（Apache-2.0）。
+字型的授權條文在 `Resources/fonts/`，ZIPFoundation 的在 `Resources/licenses/`，pdf.js 的在
+`Resources/web/vendor/pdfjs/`，組 `.app` 時都會一起複製進去。

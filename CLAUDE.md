@@ -24,6 +24,7 @@ make install      # 裝到 ~/Applications 並向 LaunchServices 註冊
 make set-default  # 把 .md 的預設開啟程式設成這個 App
 make status       # 查 .md 目前的預設開啟程式是誰
 make icons        # 由 AppIcon-v4.png 重建透明書本圖層與 ICNS（通常不需執行）
+make fonts-update # 發版前跑：字型有新版就改寫鎖定的版本、換掉快取
 make clean        # 清 .build/，保留 .cache/fonts
 ```
 
@@ -32,7 +33,8 @@ make clean        # 清 .build/，保留 .cache/fonts
 
 建置需要 **Xcode 26** 或更新版本，`actool` 要編 `AppIcon.icon`。字型不進版控，
 `make` 時依序找 `$FONTS_DIR`（有設才找）→ `~/Library/Fonts/` → 官方 release
-下載到 `.cache/fonts/`；Sarasa 那條下載路徑需要 `brew install p7zip`。
+下載到 `.cache/fonts/`。每套字型都鎖定版本，找到的檔要讀出檔內記載的版本對得上才用
+（`scripts/font-version.swift`）：檔名不帶版本的字型，只比檔名會用到放在那裡的任何一版。
 
 ## 架構
 
@@ -126,7 +128,7 @@ EPUB 的規格在 `docs/SPEC.md` 第 13 節。最容易被改壞的：
 
 | 軸 | 屬性 | 值 | 決定 |
 |---|---|---|---|
-| 字體 | `data-font` | `kai`（預設）/ `gothic` | 用哪套中文字 |
+| 字體 | `data-font` | `kai`（預設）/ `gothic` / `ming` / `round` | 用哪套中文字 |
 | 外觀 | `data-appearance` | `light` / `dark`（`auto` 由 Swift 解析後才送） | 明暗那一組顏色 |
 
 兩個軸都是**每個視窗各自的**，存在 UserDefaults 的那一份只是新視窗的起始值。
@@ -160,7 +162,7 @@ EPUB 的規格在 `docs/SPEC.md` 第 13 節。最容易被改壞的：
 - **新增選單項目**：`MarkdownBrowserApp.swift` 的 `menus`，動作對象是
   `router.active`（Picker 用 `activeBinding(_:fallback:)`）；工具列在
   `ContentView.swift` 的 `toolbarItems`，直接用自己視窗的 `state`。
-  `⌘N`、`⌘O`、`⌘3`／`⌘4`（字體）、`⇧⌘H`、`⇧⌘B`、`⌃Tab`（tab 模式切欄）、`Tab`（對照時切到另一欄）已被佔用；`⌘1`／`⌘2` 原本是主題，現在空著
+  `⌘N`、`⌘O`、`⌘3`～`⌘6`（字體）、`⇧⌘H`、`⇧⌘B`、`⌃Tab`（tab 模式切欄）、`Tab`（對照時切到另一欄）已被佔用；`⌘1`／`⌘2` 原本是主題，現在空著
 - **選單與按鍵作用在焦點欄**：搜尋、列印、標記走 `router.active?.focusedBridge`，
   不是 `bridge`（那只是心得那欄）
 - **對照並排時按鍵綁目標不綁焦點**（SPEC 13.5）：左右與空白翻書，其他捲心得；
@@ -261,7 +263,8 @@ EPUB 的規格在 `docs/SPEC.md` 第 13 節。最容易被改壞的：
 - 註解與 commit 訊息都用中文。commit 用祈使句，說明**為什麼**而不是改了什麼
 - 註解只寫「為什麼這樣做」與「試過什麼失敗了」，不複述程式碼
 - 版本號用日期 `YYYY.MM.DD`（`Info.plist` 的 `CFBundleShortVersionString`
-  與 `CHANGELOG.md` 要同步）
+  與 `CHANGELOG.md` 要同步）。發版前先跑 `make fonts-update`，字型換了版就 `make run` 看過
+  字形與行距，`fetch-fonts.sh` 的版本號跟著那次發版 commit
 - 明確不做的事：編輯功能、書庫管理、Mermaid、KaTeX（EPUB 對照不算書庫管理，見 SPEC 第 2 節）
 - 命名尚未定案。中文名「硃閱」已定，英文名待決定，目前語義首選 Cinnabar；
   現況與待改清單見 `docs/NAMING.md`（根目錄的 `APP-NAMING.md` 是較早的

@@ -7,7 +7,7 @@ BUILD_DIR  := .build/release
 CACHE      := .cache/fonts
 INSTALL_TO := $(HOME)/Applications
 
-.PHONY: all build app check fonts icons icon-assets install run clean uninstall set-default status
+.PHONY: all build app check fonts fonts-update icons icon-assets install run clean uninstall set-default status
 
 all: app
 
@@ -21,9 +21,20 @@ icon-assets:
 		--platform macosx --minimum-deployment-target 14.0 \
 		--output-partial-info-plist .build/icon-assets/Info.plist
 
-fonts:
+# 讀字型檔裡記載的版本，fetch-fonts.sh 拿來確認找到的是鎖定的那一版
+FONT_VERSION := .build/font-version
+$(FONT_VERSION): scripts/font-version.swift
+	@mkdir -p .build
+	@swiftc -O -o $@ $<
+
+fonts: $(FONT_VERSION)
 	@echo "→ 取字型"
-	@bash scripts/fetch-fonts.sh "$(CACHE)"
+	@bash scripts/fetch-fonts.sh "$(CACHE)" "$(FONT_VERSION)"
+
+# 發版前手動跑：有新版就改寫 fetch-fonts.sh 鎖定的版本並換掉快取（docs/SPEC.md 第 7 節）
+fonts-update: $(FONT_VERSION)
+	@echo "→ 檢查字型新版"
+	@bash scripts/update-fonts.sh "$(CACHE)" "$(FONT_VERSION)"
 
 # 連結器會把每個原始碼與 .o 的絕對路徑寫進除錯符號表（stabs），等於把這台機器的
 # 使用者名稱與資料夾結構跟著 .app 一起散佈出去。發版的 .app 不附 dSYM，用 -S 叫
@@ -49,7 +60,7 @@ app: check fonts build icon-assets
 	@cp .build/icon-assets/Assets.car "$(BUNDLE)/Contents/Resources/Assets.car"
 	@cp "$(BUILD_DIR)/$(APP)" "$(BUNDLE)/Contents/MacOS/$(APP)"
 	@cp -R Resources/web/. "$(BUNDLE)/Contents/Resources/web/"
-	@cp "$(CACHE)"/*.ttf "$(BUNDLE)/Contents/Resources/web/fonts/"
+	@cp "$(CACHE)"/*.ttf "$(CACHE)"/*.otf "$(BUNDLE)/Contents/Resources/web/fonts/"
 	@# 字型是 SIL OFL 1.1，散佈時要附授權條文
 	@cp Resources/fonts/LICENSE-*.txt "$(BUNDLE)/Contents/Resources/web/fonts/"
 	@# 編進執行檔的 ZIPFoundation 是 MIT，散佈時同樣要附授權聲明

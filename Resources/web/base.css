@@ -72,7 +72,7 @@
 }
 
 /* 字體與外觀是兩個獨立的軸：data-font 只決定用哪套中文字。
-   兩套都只帶 Regular 字面，字重範圍在 @font-face 開成 100–900，
+   每套都只帶 Regular 字面，字重範圍在 @font-face 開成 100–900，
    所以任何字重的請求都落回同一個字面 —— 粗體永遠不會加粗，只換色。 */
 :root[data-font="kai"] {
   --cjk: "LXGW WenKai TC";
@@ -80,6 +80,15 @@
 }
 :root[data-font="gothic"] {
   --cjk: "Sarasa Gothic TC", "PingFang TC";
+  --cjk-mono: "Sarasa Mono TC", "PingFang TC";
+}
+/* 明體與圓體沒有等寬版：程式碼借更紗等寬（內文有襯線、程式碼無襯線，一眼分得出） */
+:root[data-font="ming"] {
+  --cjk: "GenWanMin2 TW", "Songti TC";
+  --cjk-mono: "Sarasa Mono TC", "PingFang TC";
+}
+:root[data-font="round"] {
+  --cjk: "jf open huninn", "PingFang TC";
   --cjk-mono: "Sarasa Mono TC", "PingFang TC";
 }
 

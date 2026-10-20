@@ -1,4 +1,5 @@
-/* fonts.css —— 內嵌的中文字型：霞鶩文楷（楷體）與更紗黑體（黑體）。
+/* fonts.css —— 內嵌的中文字型：霞鶩文楷（楷體）、更紗黑體（黑體）、源雲明體（明體）、
+ * jf open 粉圓（圓體）。明體與圓體沒有等寬版，程式碼借更紗等寬（docs/SPEC.md 4.5）。
  *
  * 只帶 Regular 一個字面。粗體的訊號交給顏色，不交給字重，
  * 所以 font-weight 範圍開成 100–900：任何字重的請求都落回同一個字面，
@@ -32,6 +33,24 @@
 @font-face {
   font-family: "Sarasa Mono TC";
   src: url("fonts/SarasaMonoTC-Regular.ttf") format("truetype");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: block;
+}
+
+/* 源雲明體 TW（月版），官方只有 OTF */
+@font-face {
+  font-family: "GenWanMin2 TW";
+  src: url("fonts/GenWanMin2TW-R.otf") format("opentype");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: block;
+}
+
+/* 粉圓檔內記載的家族名稱帶版本（jf-openhuninn-2.1），這裡用不帶版本的名字，換版時 CSS 不必跟著改 */
+@font-face {
+  font-family: "jf open huninn";
+  src: url("fonts/jf-openhuninn.ttf") format("truetype");
   font-weight: 100 900;
   font-style: normal;
   font-display: block;
