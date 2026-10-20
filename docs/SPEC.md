@@ -150,12 +150,23 @@ WCAG AA 為止：
 
 中文字體是另一個獨立的軸，`data-font` 只決定用哪套中文字：
 
-| | 楷體 `kai`（預設） | 黑體 `gothic` |
-|---|---|---|
-| 內文（比例） | LXGW WenKai TC | Sarasa Gothic TC |
-| 程式碼（等寬） | LXGW WenKai Mono TC | Sarasa Mono TC |
+| | 楷體 `kai`（預設） | 黑體 `gothic` | 明體 `ming` | 圓體 `round` |
+|---|---|---|---|---|
+| 內文（比例） | LXGW WenKai TC | Sarasa Gothic TC | 源雲明體 TW（月版） | jf open 粉圓 |
+| 程式碼（等寬） | LXGW WenKai Mono TC | Sarasa Mono TC | Sarasa Mono TC | Sarasa Mono TC |
+| 快捷鍵 | `Cmd 3` | `Cmd 4` | `Cmd 5` | `Cmd 6` |
 
-`base.css` 把這兩組寫成 `--cjk` / `--cjk-mono`。
+`base.css` 把每一組寫成 `--cjk` / `--cjk-mono`。選單、工具列的「字」與快捷鍵都從同一份清單產生，
+新字體接在後面，原本的 `Cmd 3`／`Cmd 4` 不變。
+
+- **明體用源雲明體的 TW 月版**：台灣近年的通俗寫法（「者」無點），跟楷體、黑體的現代寫法一致；
+  TC 丹版的鉛字寫法放在長篇內文裡，少見的字形會一直吸走注意力。不另加思源宋體：源雲明體就是
+  從它改出來的，並排幾乎分不出來，留一套就好
+- **圓體用 jf open 粉圓**：只有一個字重，正好合「只帶 Regular」；筆畫比源泉圓體更圓更軟，
+  跟黑體拉得開（源泉圓體的骨架是思源黑體，跟更紗太像）
+- **明體與圓體都沒有等寬版**，程式碼區塊借更紗等寬：內文有襯線、程式碼無襯線是印刷書的常見搭法，
+  一眼看得出哪段是程式碼。源泉圓體 README 說的「JP (Monospaced)」只是假名與標點全形，
+  拉丁字母仍是比例寬，不能拿來排程式碼
 
 **黑體的粗體也不加粗。** `switch-font.sh` 的 gothic profile 在終端機裡是把粗體
 升到 SemiBold 的，這裡刻意不跟 —— 兩套字體的行為要一致，粗體永遠只換色，
@@ -275,12 +286,33 @@ EPUB 裡面的檔案（第 13 節）。
 | `LXGWWenKaiTC-Regular.ttf` | 13 MB | 楷體・比例 |
 | `LXGWWenKaiMonoTC-Regular.ttf` | 13 MB | 楷體・等寬 |
 | `SarasaGothicTC-Regular.ttf` | 24 MB | 黑體・比例 |
-| `SarasaMonoTC-Regular.ttf` | 26 MB | 黑體・等寬 |
+| `SarasaMonoTC-Regular.ttf` | 26 MB | 黑體・等寬；明體、圓體的程式碼也用它 |
+| `GenWanMin2TW-R.otf` | 21 MB | 明體・比例（源雲明體 TW） |
+| `jf-openhuninn-2.1.ttf` | 5 MB | 圓體・比例（jf open 粉圓） |
 
-成品 `.app` 約 73 MB，絕大部分是字型。
+成品 `.app` 約 106 MB，絕大部分是字型。全部完整內嵌、不做子集化：子集化後罕用字（人名、古字）
+會落回系統字型，那個字的字形就跟周圍不一樣。
 
-**不進版控。** `make` 時依序找 `~/books/fonts/` →
+**不進版控。** `make` 時依序找 `$FONTS_DIR`（有設才找，本機是 `~/books/fonts/`）→
 `~/Library/Fonts/` → 官方 GitHub release 下載到 `.cache/fonts/`。
+
+**版本鎖定**：`scripts/fetch-fonts.sh` 寫死每套的版本（霞鶩文楷 TC、更紗、源雲明體 2.100、
+粉圓 2.1）。找到的檔案不只比檔名，還用 `scripts/font-version.swift`（CoreText，`make` 時編譯）
+讀出字型檔裡記載的版本，不符就略過 —— 霞鶩文楷、更紗的檔名不帶版本，只比檔名的話
+`$FONTS_DIR` 或系統裡放的是哪版就用哪版（實際發生過：腳本寫 1.520，內嵌的卻是本機的 1.330）。
+快取 `.cache/fonts/` 也照這個規則，改了版本號下次 `make` 一定換新。`$FONTS_DIR` 與系統字型
+不會被改動，版本不符就改從官方下載。
+
+**更新：`make fonts-update`，發版前手動跑一次。** 查四套在 GitHub 上的最新 release，有新版就
+改寫 `fetch-fonts.sh` 裡的版本號、清掉快取裡的舊檔、重新下載，列出誰從幾版升到幾版；版本號的
+變動跟著那次發版 commit。不放在每次 `make app`：每次建置都要連網，而且字型換版可能改變字形與
+行距，要像改手感一樣建置出來看過才算數。也不寫進全域的 `date-version-release` skill，那是別的
+專案共用的。
+
+**下載方式**：霞鶩文楷 TC、粉圓直接下載 TTF；更紗只有 7z（見下）；源雲明體只有整包 zip
+（`GenWanMin2TW-otf.zip`，84 MB），用內建的 `unzip` 只抽 `GenWanMin2TW-R.otf`。
+源雲明體是 OTF，`@font-face` 寫 `format("opentype")`。授權檔（皆為 OFL 1.1）放在
+`Resources/fonts/LICENSE-*.txt`，跟著字型打包。
 
 兩個踩過的坑：
 
