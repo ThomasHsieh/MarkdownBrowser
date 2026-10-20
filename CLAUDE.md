@@ -245,6 +245,10 @@ EPUB 的規格在 `docs/SPEC.md` 第 13 節。最容易被改壞的：
   就跟安裝版分開，不會把測試檔寫進「最近開啟」。標記要測就拿 EPUB 或 PDF 的**複本**（不是捷徑：
   開檔會解析捷徑，sidecar 就寫到原檔旁邊），別在 `~/books/` 旁邊生出 sidecar。AX 式的 UI 自動化
   點不到 SwiftUI 的 List 與分段控制；用 `CGEvent` 送真的滑鼠點擊就點得到（終端機要有輔助使用權限）。
+  但送到 HID 的事件會跟使用者搶前景，使用者正在用別的 App 時按鍵會送進那個 App。按鍵改用
+  `CGEvent.postToPid` 直接送給測試版，App 在背景也收得到、不必帶到前景。滑鼠不行：`postToPid`
+  的點擊送不進 SwiftUI 控制項，要點側欄或分段控制時先跟使用者說好再用 HID。能繞就繞，例如版面模式
+  在 App 關著時用 `defaults write` 改測試版的設定再重開。
   `screencapture -l` 也會抓到 SwiftUI 隱藏的空視窗，先確認視窗標題再截
 - **測試檔放家目錄底下**（例如 `~/Library/Caches/…`），不要放 `/tmp`：開檔時
   `resolvingSymlinksInPath` 把 `/private/tmp` 變成 `/tmp`，列資料夾卻得到 `/private/tmp`，
