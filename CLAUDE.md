@@ -262,8 +262,9 @@ EPUB 的規格在 `docs/SPEC.md` 第 13 節。最容易被改壞的：
 
 - 註解與 commit 訊息都用中文。commit 用祈使句，說明**為什麼**而不是改了什麼
 - 註解只寫「為什麼這樣做」與「試過什麼失敗了」，不複述程式碼
-- 版本號用日期 `YYYY.MM.DD`（`Info.plist` 的 `CFBundleShortVersionString`
-  與 `CHANGELOG.md` 要同步）。發版前先跑 `make fonts-update`，字型換了版就 `make run` 看過
+- 版本號用日期 `YYYY.MM.DD`（`Info.plist` 的 `CFBundleShortVersionString`、`CFBundleVersion`
+  與 `CHANGELOG.md` 三處要同步）。`Info.plist` 用文字替換改那兩行，`PlistBuddy -c Set` 會把整個檔
+  重新排版，diff 變成上百行。發版前先跑 `make fonts-update`，字型換了版就 `make run` 看過
   字形與行距，`fetch-fonts.sh` 的版本號跟著那次發版 commit
 - 明確不做的事：編輯功能、書庫管理、Mermaid、KaTeX（EPUB 對照不算書庫管理，見 SPEC 第 2 節）
 - 命名尚未定案。中文名「硃閱」已定，英文名待決定，目前語義首選 Cinnabar；
