@@ -6,8 +6,14 @@ BUNDLE_NAME := $(APP).app
 BUILD_DIR  := .build/release
 CACHE      := .cache/fonts
 INSTALL_TO := $(HOME)/Applications
+# 實機測試用的副本：換一個 bundle ID，UserDefaults 才跟安裝版分開。放家目錄底下而不是 /tmp，
+# 原因見 CLAUDE.md「測試檔放家目錄底下」
+ID         ?= epubtest
+TEST_ID    := com.thomashsieh.markdownbrowser.$(ID)
+TEST_DIR   := $(HOME)/Library/Caches/MarkdownBrowser-test/$(ID)
+TEST_APP   := $(TEST_DIR)/$(BUNDLE_NAME)
 
-.PHONY: all build app check fonts fonts-update icons icon-assets install run clean uninstall set-default status
+.PHONY: all build app check fonts fonts-update icons icon-assets install run clean uninstall set-default status test-copy test-clean
 
 all: app
 
@@ -102,6 +108,35 @@ run: app
 		apps.forEach(a => a.terminate); \
 		for (let i = 0; i < 50 && apps.some(a => !a.terminated); i++) delay(0.1);' >/dev/null
 	@open -n "$(BUNDLE)"
+
+# 以測試版的 bundle ID 結束，碰不到安裝版與 .build/ 那份
+define quit_test
+	@osascript -l JavaScript -e 'ObjC.import("AppKit"); \
+		const apps = $$.NSRunningApplication.runningApplicationsWithBundleIdentifier("$(TEST_ID)").js; \
+		apps.forEach(a => a.terminate); \
+		for (let i = 0; i < 50 && apps.some(a => !a.terminated); i++) delay(0.1);' >/dev/null
+endef
+
+test-copy: app
+	@case "$(ID)" in *[!a-zA-Z0-9-]*|"") echo "ID 只能有英數字與 -：$(ID)"; exit 1;; esac
+	$(quit_test)
+	@rm -rf "$(TEST_APP)"
+	@mkdir -p "$(TEST_DIR)"
+	@cp -R "$(BUNDLE)" "$(TEST_APP)"
+	@/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $(TEST_ID)" "$(TEST_APP)/Contents/Info.plist"
+	@codesign --force --sign - --timestamp=none "$(TEST_APP)" >/dev/null 2>&1 \
+		|| echo "  ⚠️  ad-hoc 簽章失敗，App 仍可執行"
+	@echo "→ 測試版：$(TEST_APP)（$(TEST_ID)）"
+	@echo "   測試用的書與心得放 $(TEST_DIR)/，用 open -a \"$(TEST_APP)\" <檔案> 開"
+	@echo "   改設定：defaults write $(TEST_ID) <key> <value>（App 關著時改）；用完 make test-clean ID=$(ID)"
+
+test-clean:
+	$(quit_test)
+	@rm -rf "$(TEST_DIR)"
+	@# defaults delete 會留下一個空的 plist，一起刪
+	@defaults delete "$(TEST_ID)" >/dev/null 2>&1 || true
+	@rm -f "$(HOME)/Library/Preferences/$(TEST_ID).plist"
+	@echo "→ 已清掉測試版 $(TEST_ID) 與 $(TEST_DIR)"
 
 uninstall:
 	@rm -rf "$(INSTALL_TO)/$(BUNDLE_NAME)"

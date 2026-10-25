@@ -20,6 +20,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 make              # = make app：JS 語法檢查 → 取字型 → swift build -c release → 組 .app → ad-hoc 簽章
 make check        # 只跑 node --check Resources/web/*.js（沒裝 node 就略過）
 make run          # 建置後重開 .build/ 那份（舊的先正常結束，不動安裝版）
+make test-copy ID=epubtest  # 另一個 bundle ID 的測試版，放 ~/Library/Caches/MarkdownBrowser-test/<ID>/
+make test-clean ID=epubtest # 結束測試版、刪掉那個資料夾與它的 UserDefaults
 make install      # 裝到 ~/Applications 並向 LaunchServices 註冊
 make set-default  # 把 .md 的預設開啟程式設成這個 App
 make status       # 查 .md 目前的預設開啟程式是誰
@@ -240,9 +242,8 @@ EPUB 的規格在 `docs/SPEC.md` 第 13 節。最容易被改壞的：
   `headingOffsets` 是一次走完整份文件算的，不要改回每個標題各建一個 Range
 - **兩個 `WebPane` 不能因為切雙欄／tab 而改變視圖結構**，只能改大小與透明度，
   否則 SwiftUI 會重建 WKWebView（見 `ReadingArea`）
-- **實機測試用另一個 bundle ID 的副本**：複製 `.build/MarkdownBrowser.app`，用
-  PlistBuddy 改 `CFBundleIdentifier`（例如加 `.epubtest`）再 ad-hoc 簽章。UserDefaults
-  就跟安裝版分開，不會把測試檔寫進「最近開啟」。標記要測就拿 EPUB 或 PDF 的**複本**（不是捷徑：
+- **實機測試用 `make test-copy`**：另一個 bundle ID 的副本，UserDefaults 跟安裝版分開，
+  不會把測試檔寫進「最近開啟」。測試檔放它印出的資料夾，用完 `make test-clean`。標記要測就拿 EPUB 或 PDF 的**複本**（不是捷徑：
   開檔會解析捷徑，sidecar 就寫到原檔旁邊），別在 `~/books/` 旁邊生出 sidecar。AX 式的 UI 自動化
   點不到 SwiftUI 的 List 與分段控制；用 `CGEvent` 送真的滑鼠點擊就點得到（終端機要有輔助使用權限）。
   但送到 HID 的事件會跟使用者搶前景，使用者正在用別的 App 時按鍵會送進那個 App。按鍵改用
