@@ -13,7 +13,7 @@ TEST_ID    := com.thomashsieh.markdownbrowser.$(ID)
 TEST_DIR   := $(HOME)/Library/Caches/MarkdownBrowser-test/$(ID)
 TEST_APP   := $(TEST_DIR)/$(BUNDLE_NAME)
 
-.PHONY: all build app check fonts fonts-update icons icon-assets install run clean uninstall set-default status test-copy test-clean
+.PHONY: all build app check fonts fonts-update icons icon-assets install run clean uninstall set-default status test-copy test-clean release-zip
 
 all: app
 
@@ -137,6 +137,20 @@ test-clean:
 	@defaults delete "$(TEST_ID)" >/dev/null 2>&1 || true
 	@rm -f "$(HOME)/Library/Preferences/$(TEST_ID).plist"
 	@echo "→ 已清掉測試版 $(TEST_ID) 與 $(TEST_DIR)"
+
+# GitHub Release 的附檔。先查三處版號同步（CLAUDE.md「慣例」）、已追蹤的檔沒有未 commit 的改動，
+# zip 才對得上那個 tag。ditto 保留 .app 的權限與簽章，zip 指令會弄壞
+release-zip: app
+	@v=$$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Resources/Info.plist); \
+	b=$$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" Resources/Info.plist); \
+	c=$$(sed -n 's/^## \([0-9.]*\).*/\1/p' CHANGELOG.md | head -1); \
+	if [ "$${v}" != "$${b}" ] || [ "$${v}" != "$${c}" ]; then \
+		echo "版號不一致：CFBundleShortVersionString $${v}、CFBundleVersion $${b}、CHANGELOG $${c}"; exit 1; fi; \
+	if [ -n "$$(git status --porcelain --untracked-files=no)" ]; then \
+		echo "有未 commit 的改動，zip 會對不上 tag："; git status --short --untracked-files=no; exit 1; fi; \
+	rm -f ".build/$(APP)-$${v}.zip"; \
+	ditto -c -k --keepParent "$(BUNDLE)" ".build/$(APP)-$${v}.zip" && \
+	echo "→ .build/$(APP)-$${v}.zip（$$(( $$(stat -f %z ".build/$(APP)-$${v}.zip") / 1000000 )) MB）"
 
 uninstall:
 	@rm -rf "$(INSTALL_TO)/$(BUNDLE_NAME)"

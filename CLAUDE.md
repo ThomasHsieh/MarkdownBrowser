@@ -27,6 +27,7 @@ make set-default  # 把 .md 的預設開啟程式設成這個 App
 make status       # 查 .md 目前的預設開啟程式是誰
 make icons        # 由 AppIcon-v4.png 重建透明書本圖層與 ICNS（通常不需執行）
 make fonts-update # 發版前跑：字型有新版就改寫鎖定的版本、換掉快取
+make release-zip  # 發版 commit 之後跑：查三處版號同步、沒有未 commit 的改動，打包 Release 附檔
 make clean        # 清 .build/，保留 .cache/fonts
 ```
 
