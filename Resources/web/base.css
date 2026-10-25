@@ -468,6 +468,10 @@ mark.mb-hl .mb-b { color: var(--hl-accent); }
 .mb-book h1.mb-subhead { font-size: var(--h3-size); }
 .mb-book h2.mb-subhead { font-size: var(--h3-size); }
 .mb-book h3.mb-subhead, .mb-book h4.mb-subhead { font-size: var(--h4-size); }
+/* 章首（book.js 的 sizeChapterOpeners）：由上往下依序跟心得的 h1、h2、h3 一樣大 */
+.mb-book .mb-open1 { font-size: var(--h1-size); }
+.mb-book .mb-open2 { font-size: var(--h2-size); }
+.mb-book .mb-open3 { font-size: var(--h3-size); }
 .mb-book .mb-center { text-align: center; }
 .mb-book .mb-right { text-align: right; }
 .mb-book .mb-left { text-align: start; }

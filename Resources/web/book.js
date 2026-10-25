@@ -223,6 +223,7 @@
 
     frame.remove();
     promotePseudoHeadings(frag, payload.toc);
+    sizeChapterOpeners(frag, payload.toc);
     // 注腳要整本一起看：連結與它指向的 aside 常在不同章
     hideFootnotes(frag);
     attachLinks(frag);
@@ -267,6 +268,32 @@
       while (el.firstChild) h.appendChild(el.firstChild);
       el.replaceWith(h);
     }
+  }
+
+  /* 章首的字級跟心得一致：由上往下依序是 h1、h2、h3 的大小。書的標籤層級與字級都靠不住 ——
+   * 《書 B》的「第四章／步驟 4／加快循環時間」分別是 h2、p、p，原書字級還是由小到大，
+   * 照搬的話章名只排到 h3，幾乎跟內文一樣大。
+   * 章首的範圍用原書字級找：到最大的那幾行（章名）為止；排在章名後面的不動 ——
+   * 那是副標（《書 A》）或第一個小節標題（《書 D》的「2.1」，只比章名小一成多）。
+   * 原書的章名至少是內文的 1.4 倍才算：《書 E》每個檔開頭的「1.1」小節標題目錄也直接指到，
+   * 只有 1.29 倍；章名在前一頁的圖裡。同理只看目錄指到的檔 */
+  function sizeChapterOpeners(root, toc) {
+    const els = [...root.querySelectorAll('[data-mb-open]')];
+    const listed = new Set((toc || []).map((t) => t.path));
+    const ratio = (el) => parseFloat(el.getAttribute('data-mb-open')) || 0;
+    for (const sec of root.querySelectorAll('section.mb-chapter')) {
+      const open = [...sec.querySelectorAll('[data-mb-open]')].filter((el) => /^h[1-6]$/.test(el.localName));
+      if (!open.length || !listed.has(sec.dataset.path)) continue;
+      const max = Math.max(...open.map(ratio));
+      if (max < 1.4) continue;
+      let end = open.findIndex((el) => ratio(el) >= max * 0.95);
+      while (end < open.length && ratio(open[end]) >= max * 0.95) end++;
+      open.slice(0, end).forEach((el, i) => {
+        el.classList.remove('mb-subhead');
+        el.classList.add('mb-open' + Math.min(i + 1, 3));
+      });
+    }
+    els.forEach((el) => el.removeAttribute('data-mb-open'));
   }
 
   /* 書嵌的字型一律不用（字體跟著 data-font），@import 也不跟 */
@@ -423,6 +450,20 @@
       const me = style(el);
       if (me.weight < 600 || me.size < body * 1.12) continue;
       el.setAttribute('data-mb-ph', `${el.getAttribute('class') || 'size'}|${Math.round(me.size * 10) / 10}`);
+    }
+    // 章首：每章第一段內文之前的那幾行標題，記下原書字級，整本讀完再排大小（sizeChapterOpeners）。
+    // 依文字節點順序走，碰到第一個不在標題裡的文字就停 —— 外層的 header、div 也有文字，看元素會停錯
+    const hidden = new Set(flags.filter(([, cls]) => cls.includes('mb-hidden')).map(([el]) => el));
+    const isHidden = (n) => { for (let p = n; p; p = p.parentElement) if (hidden.has(p)) return true; return false; };
+    for (const sec of fdoc.body.querySelectorAll('section.mb-chapter')) {
+      const walker = fdoc.createTreeWalker(sec, NodeFilter.SHOW_TEXT);
+      for (let t = walker.nextNode(); t; t = walker.nextNode()) {
+        if (!t.nodeValue.trim() || isHidden(t.parentElement)) continue;
+        const h = t.parentElement.closest('h1, h2, h3, h4, h5, h6, [data-mb-ph]');
+        if (!h || !sec.contains(h)) break;
+        // 存的是跟內文的倍數：章名夠不夠大要跟內文比
+        if (!h.hasAttribute('data-mb-open')) h.setAttribute('data-mb-open', Math.round(style(h).size / body * 100) / 100);
+      }
     }
     // 讀完才改：邊讀邊改會讓後面元素的計算值跟著變
     for (const [el, cls] of flags) {
