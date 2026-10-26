@@ -246,7 +246,9 @@ EPUB 的規格在 `docs/SPEC.md` 第 13 節。最容易被改壞的：
 - **實機測試用 `make test-copy`**：另一個 bundle ID 的副本，UserDefaults 跟安裝版分開，
   不會把測試檔寫進「最近開啟」。測試檔放它印出的資料夾，用完 `make test-clean`。標記要測就拿 EPUB 或 PDF 的**複本**（不是捷徑：
   開檔會解析捷徑，sidecar 就寫到原檔旁邊），別在 `~/books/` 旁邊生出 sidecar。AX 式的 UI 自動化
-  點不到 SwiftUI 的 List 與分段控制；用 `CGEvent` 送真的滑鼠點擊就點得到（終端機要有輔助使用權限）。
+  點不到 SwiftUI 的 List 與分段控制；用 `CGEvent` 送真的滑鼠點擊就點得到（終端機要在「隱私權與安全性 → 裝置控制和資料取用」打開）。
+  權限沒開時合成事件會被無聲丟掉、不報錯，看起來像焦點問題：送不進去先查 `CGPreflightPostEventAccess()`，
+  `false` 就是權限沒開。
   但送到 HID 的事件會跟使用者搶前景，使用者正在用別的 App 時按鍵會送進那個 App。按鍵改用
   `CGEvent.postToPid` 直接送給測試版，App 在背景也收得到、不必帶到前景。滑鼠不行：`postToPid`
   的點擊送不進 SwiftUI 控制項，要點側欄或分段控制時先跟使用者說好再用 HID。能繞就繞，例如版面模式
