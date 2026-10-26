@@ -341,6 +341,18 @@
       im.removeAttribute('href');
       im.removeAttribute('xlink:href');
     });
+    // 有的書寫成小寫 viewbox：XHTML 分大小寫，等於沒有 viewBox，圖照原尺寸畫、被 svg 裁掉一角。
+    // 連小寫的都沒有時，用唯一那張圖的長寬補
+    body.querySelectorAll('svg').forEach((svg) => {
+      if (svg.hasAttribute('viewBox')) return;
+      let vb = svg.getAttribute('viewbox');
+      const ims = svg.querySelectorAll('image');
+      if (!vb && ims.length === 1) {
+        const w = parseFloat(ims[0].getAttribute('width')), h = parseFloat(ims[0].getAttribute('height'));
+        if (w > 0 && h > 0) vb = `0 0 ${w} ${h}`;
+      }
+      if (vb) svg.setAttribute('viewBox', vb);
+    });
   }
 
   /* 搬進正式文件之後才開始載圖。不用 lazy：圖片載入後才撐開高度，上方的版面會位移，
