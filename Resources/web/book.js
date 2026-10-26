@@ -499,12 +499,21 @@
     });
   }
 
-  /* 只有一張圖、沒有文字的章（封面、書名頁）。翻頁模式下翻到它時滿版顯示（docs/SPEC.md 13.12） */
+  /* 只有一張圖、沒有文字的章（封面、書名頁）。翻頁模式下翻到它時滿版顯示（docs/SPEC.md 13.12）。
+   * 看不見的字不算：有的封面頁帶一個 display:none 的標題（給目錄用），算進去就不滿版，
+   * 雙頁時跟旁邊滿版的書名頁大小對不起來 */
   function markImagePages() {
     for (const sec of content.querySelectorAll(':scope > section.mb-chapter')) {
       const pics = sec.querySelectorAll('img, svg');
-      if (pics.length === 1 && !sec.textContent.trim()) sec.classList.add('mb-imgpage');
+      if (pics.length === 1 && !hasShownText(sec)) sec.classList.add('mb-imgpage');
     }
+  }
+  function hasShownText(root) {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      if (n.data.trim() && !n.parentElement.closest('.mb-hidden')) return true;
+    }
+    return false;
   }
 
   /* ── 標題、目錄與章 ───────────────────────────────────── */
