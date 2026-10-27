@@ -152,7 +152,9 @@ release-zip: app
 	ditto -c -k --keepParent "$(BUNDLE)" ".build/$(APP)-$${v}.zip" && \
 	echo "→ .build/$(APP)-$${v}.zip（$$(( $$(stat -f %z ".build/$(APP)-$${v}.zip") / 1000000 )) MB）"
 
+# 跟 clean 一樣先取消註冊再刪
 uninstall:
+	@if [ -d "$(INSTALL_TO)/$(BUNDLE_NAME)" ]; then $(LSREGISTER) -u "$(INSTALL_TO)/$(BUNDLE_NAME)"; fi
 	@rm -rf "$(INSTALL_TO)/$(BUNDLE_NAME)"
 	@echo "→ 已移除 $(INSTALL_TO)/$(BUNDLE_NAME)"
 
