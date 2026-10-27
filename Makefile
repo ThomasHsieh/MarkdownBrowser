@@ -6,6 +6,7 @@ BUNDLE_NAME := $(APP).app
 BUILD_DIR  := .build/release
 CACHE      := .cache/fonts
 INSTALL_TO := $(HOME)/Applications
+LSREGISTER := /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 # 實機測試用的副本：換一個 bundle ID，UserDefaults 才跟安裝版分開。放家目錄底下而不是 /tmp，
 # 原因見 CLAUDE.md「測試檔放家目錄底下」
 ID         ?= epubtest
@@ -91,8 +92,7 @@ install: app
 	@mkdir -p "$(INSTALL_TO)"
 	@rm -rf "$(INSTALL_TO)/$(BUNDLE_NAME)"
 	@cp -R "$(BUNDLE)" "$(INSTALL_TO)/"
-	@/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
-		-f "$(INSTALL_TO)/$(BUNDLE_NAME)"
+	@$(LSREGISTER) -f "$(INSTALL_TO)/$(BUNDLE_NAME)"
 	@echo "→ 已安裝到 $(INSTALL_TO)/$(BUNDLE_NAME)"
 	@echo "   要讓 Finder 雙點擊 .md 開這個 App，再跑一次：make set-default"
 
@@ -156,6 +156,8 @@ uninstall:
 	@rm -rf "$(INSTALL_TO)/$(BUNDLE_NAME)"
 	@echo "→ 已移除 $(INSTALL_TO)/$(BUNDLE_NAME)"
 
+# 先取消註冊再刪：只刪資料夾的話 LaunchServices 還記著這份，.md 仍可能解析到已經不存在的它
 clean:
+	@if [ -d "$(BUNDLE)" ]; then $(LSREGISTER) -u "$(CURDIR)/$(BUNDLE)"; fi
 	@rm -rf .build
 	@echo "→ 已清除（字型快取 $(CACHE) 保留）"
