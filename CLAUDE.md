@@ -21,7 +21,7 @@ make              # = make app：JS 語法檢查 → 取字型 → swift build -
 make check        # 只跑 node --check Resources/web/*.js（沒裝 node 就略過）
 make run          # 建置後重開 .build/ 那份（舊的先正常結束，不動安裝版）
 make test-copy ID=epubtest  # 另一個 bundle ID 的測試版，放 ~/Library/Caches/MarkdownBrowser-test/<ID>/
-make test-clean ID=epubtest # 結束測試版、刪掉那個資料夾與它的 UserDefaults
+make test-clean ID=epubtest # 結束測試版、取消註冊、刪掉那個資料夾與它的 UserDefaults
 make install      # 裝到 ~/Applications 並向 LaunchServices 註冊
 make set-default  # 把 .md 的預設開啟程式設成這個 App
 make status       # 查 .md 目前的預設開啟程式是誰

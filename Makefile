@@ -131,7 +131,10 @@ test-copy: app
 	@echo "   改設定：defaults write $(TEST_ID) <key> <value>（App 關著時改）；用完 make test-clean ID=$(ID)"
 
 test-clean:
+	@case "$(ID)" in *[!a-zA-Z0-9-]*|"") echo "ID 只能有英數字與 -：$(ID)"; exit 1;; esac
 	$(quit_test)
+	@# 跟 clean 一樣先取消註冊再刪
+	@if [ -d "$(TEST_APP)" ]; then $(LSREGISTER) -u "$(TEST_APP)"; fi
 	@rm -rf "$(TEST_DIR)"
 	@# defaults delete 會留下一個空的 plist，一起刪
 	@defaults delete "$(TEST_ID)" >/dev/null 2>&1 || true
