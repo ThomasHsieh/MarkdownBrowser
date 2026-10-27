@@ -371,9 +371,11 @@ MB.toast = function (text) {
   toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2200);
 };
 
-/* 點內文的標題：交給 Swift 轉給另一欄。拖選文字、點標記、點連結都不算。 */
+/* 點內文的標題：交給 Swift 轉給另一欄。拖選文字、點標記、點連結都不算。
+ * 書的章首圖算點了它藏起來的章名（book.js 的 chapterImageHeading） */
 content.addEventListener('click', (e) => {
-  const h = e.target.closest('h1, h2, h3, h4');
+  const book = window.MBBook;
+  const h = e.target.closest('h1, h2, h3, h4') || (book && book.active && book.chapterImageHeading(e.target));
   if (!h || !content.contains(h)) return;
   if (e.target.closest('a, mark.mb-hl')) return;
   if (!window.getSelection().isCollapsed) return;

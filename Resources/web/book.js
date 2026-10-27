@@ -27,6 +27,7 @@
     markers: [],          // [{el, index, level}]，依文件順序，標出每個目錄項目從哪裡開始
     chapter: null,
     navigatedAt: 0,       // 最後一次被同步或選單帶去某處的時間
+    linkedChapters: new Set(),  // 點了帶得出心得的章（Swift 推來，目錄索引）
     layout: 'single',     // scroll / single / double（docs/SPEC.md 13.12）
   };
   window.MBBook = BK;
@@ -118,6 +119,7 @@
     markImagePages();
     const outline = assignHeadings();
     locateChapters();
+    markChapterImages();
     outline.forEach((o) => { o.chapter = chapterOf(document.getElementById(o.id)); });
 
     if (hl) hl.afterRender(opts.highlights, kept);
@@ -580,9 +582,39 @@
     return !!afterStart && !!beforeEnd;
   }
 
+  /* 看不見的標題不算：章首是一張圖的書，圖旁藏著給目錄用的章名（display:none），
+   * 同步落在它上面就沒有位置可捲，畫面不動。跳過它，章首就退到那一章的起點（那張圖） */
   function headingsIn(range) {
-    return [...content.querySelectorAll('h1, h2, h3, h4')].filter((h) => inRange(h, range) && !h.closest('.mb-fn'));
+    return [...content.querySelectorAll('h1, h2, h3, h4')].filter((h) => inRange(h, range) && !h.closest('.mb-fn, .mb-hidden'));
   }
+
+  /* ── 章首圖 ──────────────────────────────────────────────
+   * 章首是一張圖的書，章名藏在圖旁，書那欄沒有看得見的章名可點。所以這張圖就當章名：
+   * 點了換到那一章的心得（docs/SPEC.md 13.6）。只有對得到心得的章才算，封面、版權頁也是
+   * 單張圖加藏起來的標題，點了沒有心得可換 */
+  function hiddenHeading(sec) {
+    return [...sec.querySelectorAll('h1, h2, h3, h4')].find((h) => h.closest('.mb-hidden')) || null;
+  }
+
+  function markChapterImages() {
+    if (!BK.active || BK.fixed || BK.pdf) return;
+    for (const sec of content.querySelectorAll(':scope > section.mb-imgpage')) {
+      const h = hiddenHeading(sec);
+      const chapter = h ? chapterOf(h) : null;
+      sec.classList.toggle('mb-chapter-link', chapter != null && BK.linkedChapters.has(chapter));
+    }
+  }
+
+  MB.setLinkedChapters = function (chapters) {
+    BK.linkedChapters = new Set(chapters);
+    markChapterImages();
+  };
+
+  /* 點到的是可點的章首圖：回那張圖代表的（藏起來的）章名，app.js 當成點了那個標題 */
+  BK.chapterImageHeading = function (target) {
+    const sec = target.closest('section.mb-chapter-link');
+    return sec && content.contains(sec) ? hiddenHeading(sec) : null;
+  };
 
   /* 點了某個標題：它在哪一章、是不是那一章的章名（章名對到心得的檔頭，不必提示「找不到小節」） */
   BK.describeHeading = function (h) {

@@ -191,6 +191,7 @@ final class DocumentState: PaneDocument {
 
     private var linkObserver: AnyCancellable?
     private var sentLinked: [ObjectIdentifier: Bool] = [:]
+    private var sentLinkedChapters: [Int]?
 
     /// 兩欄各自要知道「點了會不會帶動另一欄」：會的話標題與引文的游標變手指（docs/SPEC.md 13.6）
     private func pushLinked() {
@@ -198,6 +199,12 @@ final class DocumentState: PaneDocument {
         send(isComparing, to: self)
         // 書那欄：對照中，或只開書但對照開關開著（點標題會帶出那章的心得）
         send(isComparing || (documentURL == nil && compareEnabled && book.documentURL != nil), to: book)
+        // 哪幾章帶得出心得：藏著章名的章首圖只有這幾章能點，封面、版權頁不能（docs/SPEC.md 13.6）
+        let linkable = book.toc.indices.filter { mappedChapter($0) != nil }
+        if let b = book.bridge, b.isReady, sentLinkedChapters != linkable {
+            sentLinkedChapters = linkable
+            b.setLinkedChapters(linkable)
+        }
 
         // 兩欄並排時按鍵綁目標不綁焦點：左右與空白翻書，其他捲心得。
         // tab 模式下另一欄看不見，不轉（docs/SPEC.md 13.5）
@@ -267,7 +274,7 @@ final class DocumentState: PaneDocument {
         sentLinked[ObjectIdentifier(pane)] = nil
         sentFrame[ObjectIdentifier(pane)] = nil
         sentPaneSwitch[ObjectIdentifier(pane)] = nil
-        if pane === self { sentForward = nil } else { sentForwardBook = nil }
+        if pane === self { sentForward = nil } else { sentForwardBook = nil; sentLinkedChapters = nil }
         pushLinked()
         deliverPendingFocus()
     }
@@ -714,13 +721,21 @@ final class DocumentState: PaneDocument {
         // 單檔心得：往回找最近一個「是某一章章名」的標題
         let headed = mapped.filter { chapterMap.targets[$0]?.heading != nil }
         guard !headed.isEmpty else { return (mapped, false) }
+        // 檔頭對到的章與標題對到的章混在同一份（「推薦序與前言」：前言對到檔頭、推薦序對到 h2）：
+        // 標題對到的章只管它自己那一節，不往下延伸 —— 否則推薦序之後的「前言之一」會算成推薦序
+        let whole = mapped.filter { chapterMap.targets[$0]?.heading == nil }
         let index = id.flatMap { id in outline.firstIndex(where: { $0.id == id }) }
+        var shallowest = Int.max
         for h in (index.map { outline[...$0] } ?? []).reversed() {
             let key = ChapterMap.normalize(h.text)
             if let c = headed.first(where: { chapterMap.targets[$0]?.heading.map(ChapterMap.normalize) == key }) {
-                return ([c], h.id == id)
+                if whole.isEmpty || h.id == id || shallowest > h.level { return ([c], h.id == id) }
+                return (whole, false)
             }
+            shallowest = min(shallowest, h.level)
         }
+        // 第一個標題對到的章之前（h1、開場的小節）：整份都算
+        if !whole.isEmpty { return (mapped, false) }
         if !silently { book.bridge?.toast("這一節之前沒有對應的章節") }
         return nil
     }
@@ -900,6 +915,7 @@ protocol WebBridge: AnyObject {
     func setBookLayout(_ mode: String)
     func syncTo(_ request: [String: Any])
     func setLinked(_ on: Bool)
+    func setLinkedChapters(_ chapters: [Int])
     func setForwardPageKeys(_ on: Bool)
     func pageKey(_ key: String, shift: Bool)
     func setForwardScrollKeys(_ on: Bool)

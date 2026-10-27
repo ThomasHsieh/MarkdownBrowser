@@ -266,7 +266,7 @@ enum LibraryIndex {
 /// 書的章 ↔ 心得的檔（或單檔心得裡的標題）。docs/SPEC.md 13.6。
 ///
 /// 章名比對為主：nav 的章名拿去比對心得開頭的 h1 與引言（「> 第 3 章　（章名）」）。
-/// 開頭一條都對不到的檔（單檔心得）才比對它的各級標題。最後才退回章號。
+/// 開頭一條都對不到的檔（單檔心得）才比對它的各級標題。再來退回章號，最後才看重疊比例。
 struct ChapterMap {
 
     struct Target: Equatable {
@@ -294,7 +294,7 @@ struct ChapterMap {
         //    引言那一行幾乎就是章名本身。兩個字的章名（「前言」「目錄」）太泛，
         //    只認 h1 結尾（「心得——前言」）。
         for (i, entry) in toc.enumerated() {
-            let label = normalize(entry.label)
+            let label = normalize(tocLabel(entry.label))
             guard label.count >= 2 else { continue }
             var best: (note: NoteOutline, score: Double)?
             for note in parsed {
@@ -322,8 +322,8 @@ struct ChapterMap {
         //    心得裡另一章的同名標題搶走
         let singles = parsed.filter { !headerHit.contains($0.file) }
         for (i, entry) in toc.enumerated() where targets[i] == nil && !hasMappedAncestor(i, toc, targets) {
-            let label = normalize(entry.label)
-            let number = chapterNumber(entry.label)
+            let label = normalize(tocLabel(entry.label))
+            let number = tocChapterNumber(entry.label)
             for note in singles {
                 if let h = note.headings.first(where: { h in
                     let n = normalize(h)
@@ -340,12 +340,45 @@ struct ChapterMap {
 
         // 3. 退回章號：nav 寫著第 N 章、心得檔名也是第 N 章
         for (i, entry) in toc.enumerated() where targets[i] == nil && !hasMappedAncestor(i, toc, targets) {
-            guard let number = chapterNumber(entry.label) else { continue }
+            guard let number = tocChapterNumber(entry.label) else { continue }
             if let note = parsed.first(where: { ChapterSort.chapterNumber(of: $0.file.lastPathComponent) == number }) {
                 targets[i] = Target(file: note.file, heading: nil)
             }
         }
+
+        // 4. 最後才看重疊比例：目錄「推薦序　（篇名）／（作者）」、心得「推薦序一：（篇名）（作者）」
+        //    多一個序號就不是包含關係。這種心得的檔頭常已對到別的項目（前言），第 2 步不會看它的標題，
+        //    所以這裡所有心得的標題都比。門檻要高：至少 8 個字、佔章名八成，短章名不適用
+        for (i, entry) in toc.enumerated() where targets[i] == nil && !hasMappedAncestor(i, toc, targets) {
+            let label = normalize(tocLabel(entry.label))
+            guard label.count >= 8 else { continue }
+            var best: (target: Target, ratio: Double)?
+            for note in parsed {
+                for h in note.headings {
+                    let ratio = Double(longestCommon(label, normalize(h))) / Double(label.count)
+                    if ratio >= 0.8, ratio > (best?.ratio ?? 0) { best = (Target(file: note.file, heading: h), ratio) }
+                }
+            }
+            if let best { targets[i] = best.target }
+        }
         return ChapterMap(targets: targets)
+    }
+
+    /// 兩個字串最長的共同子字串有幾個字
+    private static func longestCommon(_ a: String, _ b: String) -> Int {
+        let x = Array(a), y = Array(b)
+        guard !x.isEmpty, !y.isEmpty else { return 0 }
+        var prev = [Int](repeating: 0, count: y.count + 1)
+        var best = 0
+        for i in 1...x.count {
+            var row = [Int](repeating: 0, count: y.count + 1)
+            for j in 1...y.count where x[i - 1] == y[j - 1] {
+                row[j] = prev[j - 1] + 1
+                best = max(best, row[j])
+            }
+            prev = row
+        }
+        return best
     }
 
     /// 目錄第 i 項底下的子項目：往後直到下一個同級或更上層的項目為止。
@@ -377,6 +410,22 @@ struct ChapterMap {
         s = s.replacingOccurrences(of: "(chapter|part|lesson)[0-9]+", with: "", options: .regularExpression)
         return String(s.unicodeScalars.filter { CharacterSet.letters.contains($0) || CharacterSet.decimalDigits.contains($0) }
             .map(Character.init))
+    }
+
+    /// 目錄的章名可能只用數字開頭當章號（「２　（章名）」「10　（章名）」），沒有「第…章」。
+    /// 只用在目錄上：心得標題的「3 個原則」不是章號。數字後面要緊接空白，「3.1 （小節名）」不算
+    private static let leadingNumber = "^\\s*[0-9０-９]+\\s+"
+
+    static func tocLabel(_ label: String) -> String {
+        guard let r = label.range(of: leadingNumber, options: .regularExpression), r.upperBound < label.endIndex else { return label }
+        return String(label[r.upperBound...])
+    }
+
+    static func tocChapterNumber(_ label: String) -> Int? {
+        if let n = chapterNumber(label) { return n }
+        guard let r = label.range(of: leadingNumber, options: .regularExpression) else { return nil }
+        let digits = label[r].filter { !$0.isWhitespace }
+        return Int(digits.applyingTransform(.fullwidthToHalfwidth, reverse: false) ?? digits)
     }
 
     static func chapterNumber(_ text: String) -> Int? {

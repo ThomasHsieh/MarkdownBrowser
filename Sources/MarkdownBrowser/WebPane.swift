@@ -252,6 +252,7 @@ struct WebPane: NSViewRepresentable {
         func revealPendingSync() { eval("MB.revealPendingSync()") }
         func toast(_ text: String) { eval("MB.toast(\(literal(text)))") }
         func setLinked(_ on: Bool) { eval("MB.setLinked(\(on))") }
+        func setLinkedChapters(_ chapters: [Int]) { eval("MB.setLinkedChapters(\(json(chapters)))") }
         func setForwardPageKeys(_ on: Bool) { eval("MB.setForwardPageKeys(\(on))") }
         func pageKey(_ key: String, shift: Bool) { eval("MB.pageKey(\(literal(key)), \(shift))") }
         func setForwardScrollKeys(_ on: Bool) { eval("MB.setForwardScrollKeys(\(on))") }
