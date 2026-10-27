@@ -138,7 +138,7 @@ test-clean:
 	@case "$(ID)" in *[!a-zA-Z0-9-]*|"") echo "ID 只能有英數字與 -：$(ID)"; exit 1;; esac
 	$(quit_test)
 	@# 跟 clean 一樣先取消註冊再刪
-	@if [ -d "$(TEST_APP)" ]; then $(LSREGISTER) -u "$(TEST_APP)"; fi
+	@if [ -d "$(TEST_APP)" ]; then $(LSREGISTER) -u "$(TEST_APP)" 2>/dev/null || true; fi
 	@rm -rf "$(TEST_DIR)"
 	@# defaults delete 會留下一個空的 plist，一起刪
 	@defaults delete "$(TEST_ID)" >/dev/null 2>&1 || true
@@ -161,12 +161,13 @@ release-zip: app
 
 # 跟 clean 一樣先取消註冊再刪
 uninstall:
-	@if [ -d "$(INSTALL_TO)/$(BUNDLE_NAME)" ]; then $(LSREGISTER) -u "$(INSTALL_TO)/$(BUNDLE_NAME)"; fi
+	@if [ -d "$(INSTALL_TO)/$(BUNDLE_NAME)" ]; then $(LSREGISTER) -u "$(INSTALL_TO)/$(BUNDLE_NAME)" 2>/dev/null || true; fi
 	@rm -rf "$(INSTALL_TO)/$(BUNDLE_NAME)"
 	@echo "→ 已移除 $(INSTALL_TO)/$(BUNDLE_NAME)"
 
 # 先取消註冊再刪：只刪資料夾的話 LaunchServices 還記著這份，.md 仍可能解析到已經不存在的它
+# 從沒打開過的那份（只跑過 make install、make release-zip）沒有註冊，lsregister -u 會回 -10814 擋住後面的刪除
 clean:
-	@if [ -d "$(BUNDLE)" ]; then $(LSREGISTER) -u "$(CURDIR)/$(BUNDLE)"; fi
+	@if [ -d "$(BUNDLE)" ]; then $(LSREGISTER) -u "$(CURDIR)/$(BUNDLE)" 2>/dev/null || true; fi
 	@rm -rf .build
 	@echo "→ 已清除（字型快取 $(CACHE) 保留）"
