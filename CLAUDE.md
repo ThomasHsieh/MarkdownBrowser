@@ -6,7 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 建置與執行
 
-沒有測試；`make check` 只檢查網頁端 JS 的語法（`make app` 會先跑）。驗證方式是
+自動化測試只有一組：`make test` 跑章節對應（`ChapterMap`）的比對規則，fixture 是自編的目錄與心得。
+`make check` 只檢查網頁端 JS 的語法（`make app` 會先跑）。其餘的驗證方式是
 `make run` 後拿真實的中文 Markdown（`~/books/心得/`）開起來看。
 
 改手感（捲動、動畫、按鍵、字型渲染）之前，先在安裝版（`~/Applications` 那份）上操作一次
@@ -19,6 +20,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 make              # = make app：JS 語法檢查 → 取字型 → swift build -c release → 組 .app → ad-hoc 簽章
 make check        # 只跑 node --check Resources/web/*.js（沒裝 node 就略過）
+make test         # swift test：ChapterMap 的比對規則（Tests/MarkdownBrowserTests）
 make run          # 建置後重開 .build/ 那份（舊的先正常結束，不動安裝版）
 make test-copy ID=epubtest  # 另一個 bundle ID 的測試版，放 ~/Library/Caches/MarkdownBrowser-test/<ID>/
 make test-clean ID=epubtest # 結束測試版、取消註冊、刪掉那個資料夾與它的 UserDefaults
@@ -96,8 +98,9 @@ EPUB 的規格在 `docs/SPEC.md` 第 13 節。最容易被改壞的：
   書裡的粗體就會真的加粗，違反核心不變量
 - 書的配對與章節對應是開檔當下算的（`BookPairing`、`ChapterMap`），不存書目。
   只有手動指定、各資料夾上次讀的心得、書的閱讀位置存在 UserDefaults
-- 改 `ChapterMap` 的比對規則之前，先拿現有四本書（書 A、書 B、書 C、
-  書 D）跑一遍看結果 —— SPEC 13.6 那幾條規則都是被真實資料逼出來的
+- 改 `ChapterMap` 的比對規則之前，先拿現有的書（書 A～F）跑一遍看結果，改完再跑一次比對前後的差異 ——
+  SPEC 13.6 那幾條規則都是被真實資料逼出來的。新規則也要在 `make test` 補一個自編的案例：
+  真實的書是私人的，進不了 repo，測試是唯一留在版控裡的防線
 - **PDF 照原樣顯示**，粗體照樣加粗，跟固定版面 EPUB 同一個例外（SPEC 13.13）。`book.js` 只在
   幾個分岔點（渲染、位置、同步、按鍵、版面）轉給 `bookpdf.js`。書那欄的檔案經 `BookResources`
   （`EpubBook`／`PdfBook`）從 `mbres://book/` 送

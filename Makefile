@@ -14,7 +14,7 @@ TEST_ID    := com.thomashsieh.markdownbrowser.$(ID)
 TEST_DIR   := $(HOME)/Library/Caches/MarkdownBrowser-test/$(ID)
 TEST_APP   := $(TEST_DIR)/$(BUNDLE_NAME)
 
-.PHONY: all build app check fonts fonts-update icons icon-assets install run clean uninstall set-default status test-copy test-clean release-zip
+.PHONY: all build app check test fonts fonts-update icons icon-assets install run clean uninstall set-default status test-copy test-clean release-zip
 
 all: app
 
@@ -56,6 +56,10 @@ check:
 		for f in Resources/web/*.js; do node --check "$$f" || exit 1; done; \
 		echo "→ JS 語法檢查通過"; \
 	else echo "  ⚠️  沒有 node，略過 JS 語法檢查"; fi
+
+# 章節對應（ChapterMap）的比對規則。fixture 是自編的，私人書庫的總體檢見 CLAUDE.md「書與對照」
+test:
+	@swift test
 
 app: check fonts build icon-assets
 	@echo "→ 組 $(BUNDLE)"

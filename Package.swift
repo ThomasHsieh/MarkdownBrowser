@@ -19,6 +19,13 @@ let package = Package(
             // 這是個單視窗、全部跑在主執行緒的 App，Swift 6 的嚴格併發檢查
             // 只會製造大量 @Sendable 樣板而換不到安全性。
             swiftSettings: [.swiftLanguageMode(.v5)]
-        )
+        ),
+        // 只測不碰 UI 的比對規則（ChapterMap）。fixture 全部自編：真實的書是私人的，進不了公開的 repo
+        .testTarget(
+            name: "MarkdownBrowserTests",
+            dependencies: ["MarkdownBrowser"],
+            path: "Tests/MarkdownBrowserTests",
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
     ]
 )
