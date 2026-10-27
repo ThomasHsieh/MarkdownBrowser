@@ -282,3 +282,17 @@ EPUB 的規格在 `docs/SPEC.md` 第 13 節。最容易被改壞的：
   現況與待改清單見 `docs/NAMING.md`（根目錄的 `APP-NAMING.md` 是較早的
   發想紀錄）。專案目錄與 bundle ID 維持 `MarkdownBrowser` /
   `com.thomashsieh.markdownbrowser`，未經指示不要改名
+
+## Agent skills
+
+### Issue tracker
+
+用 GitHub Issues（`gh` CLI），外部 PR 不列入 triage。見 `docs/agents/issue-tracker.md`。
+
+### Triage labels
+
+五個預設名稱：`needs-triage`、`needs-info`、`ready-for-agent`、`ready-for-human`、`wontfix`。見 `docs/agents/triage-labels.md`。
+
+### Domain docs
+
+單一 context：根目錄的 `CONTEXT.md` 加 `docs/adr/`。見 `docs/agents/domain.md`。
