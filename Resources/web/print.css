@@ -15,6 +15,8 @@
   --muted: #6a6a6a;
   --rule: #c8c8c8;
   --quote-bar: #b0b0b0;
+  --quote-fg: #4a4a4a;   /* 紙上引文不必刻意變淡，淡灰印出來容易糊 */
+  --quote-tint: rgba(162, 84, 26, 0.08);
   --link: #1a1a1a;
   --code-bg: #f4f4f4;
   --th-fg: #1a1a1a;    /* 深色模式的表頭是淺灰字，印在白紙上看不見 */

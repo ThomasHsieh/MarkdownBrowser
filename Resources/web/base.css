@@ -5,13 +5,17 @@
  */
 
 :root {
+  /* 內文與引文照參考版面（Claude 產的對照頁）那組暖色：原本照終端機取樣的 #CECECE 並排比起來字偏暗。
+     底色與橘試過參考版面的 #232220、#E0A07C，一個偏灰濁、一個偏粉，留在終端機的值。框線與 --muted 沒換 */
   --bg: #1c1c1c;
-  --fg: #cecece;
-  --accent: #dd9853;          /* 粗體用色，ghostty bold-color 的宣告值 */
+  --fg: #e8e4dc;              /* 13.4:1 */
+  --accent: #dd9853;          /* 粗體用色，ghostty bold-color 的宣告值，7.1:1 */
   --muted: #8a8a8a;
   --rule: #cecece;            /* 框線＝內文色，跟終端機用 box-drawing 字元畫框一樣亮 */
   --focus-frame: #555555;     /* 對照並排時的焦點欄外框：比 --rule 淡一階，看得出來但不搶 */
-  --quote-bar: #757575;
+  --quote-bar: #3a3833;       /* 很淡：引文靠字色與縮排就分得出來，線只是提示 */
+  --quote-fg: #c9c4b8;        /* 引文只比內文暗一點，9.1:1 */
+  --quote-tint: #3a2c23;      /* 引文裡的引文：橘色調的底，引文字 7.7、粗體 5.6 */
   --link: #7aa6d6;
   --code-bg: #242424;
   --th-fg: #ededed;
@@ -25,11 +29,12 @@
   --line-height: 1.9;
   --measure-padding: 3rem;
 
-  /* 標題靠字級分層，顏色跟粗體同一個橘 —— 跟終端機裡讀到的一樣 */
-  --h1-size: 1.75em;
-  --h2-size: 1.4em;
-  --h3-size: 1.18em;
-  --h4-size: 1.05em;
+  /* 標題主要靠橘色分層，字級只比內文大一點：大字標題在長文裡太搶眼，每節開頭都像被打斷。
+     h2 照參考版面量出來的 1.1 倍，h4 跟內文同大 */
+  --h1-size: 1.35em;
+  --h2-size: 1.1em;
+  --h3-size: 1.05em;
+  --h4-size: 1em;
   --h1-color: var(--accent);
   --h2-color: var(--accent);
   --h3-color: var(--accent);
@@ -52,12 +57,14 @@
  */
 :root[data-appearance="light"] {
   --bg: #faf8f3;
-  --fg: #1e1e1e;              /* 15.7:1。#3A3A3A 在紙上偏灰，比照電子書閱讀器壓到接近黑 */
+  --fg: #2a2824;              /* 13.9:1，暖黑，跟深色那組同一個色調 */
   --accent: #a2541a;          /* 5.2:1 —— 與深色模式同色相，壓深到通過 AA */
   --muted: #7a7368;
   --rule: #3a3a3a;            /* 框線比內文淡一階：跟字一樣黑的話表格線會搶走文字 */
   --focus-frame: #a8a8a8;     /* 對底色 2.3:1，跟深色那組一樣明顯 */
-  --quote-bar: #b9b2a5;
+  --quote-bar: #dedbd2;
+  --quote-fg: #57534b;        /* 7.2:1 */
+  --quote-tint: #f3eae2;      /* 參考版面的 #F1E6DD 上橘只有 4.48，淡一點回到 4.63；引文字 6.4 */
   --link: #1d5fa8;
   --code-bg: #f0ece3;
   --th-fg: #1f1f1f;
@@ -105,7 +112,6 @@ body {
   font-family: var(--font-body);
   font-size: var(--font-size);
   line-height: var(--line-height);
-  -webkit-font-smoothing: antialiased;   /* 深色底：關掉筆畫加粗，淺字才不會糊 */
   /* 絕不合成假粗體。粗體的訊號完全交給顏色。 */
   font-synthesis-weight: none;
   -webkit-font-synthesis: none;
@@ -113,9 +119,14 @@ body {
   overflow-wrap: break-word;
   font-variant-numeric: tabular-nums;   /* 數字等寬，金額上下對齊 */
 }
-/* 淺色底反過來：antialiased 會關掉 macOS 的筆畫加粗，深字在紙上變得又細又淡，
-   楷體尤其明顯。交回系統預設，筆畫跟電子書閱讀器一樣扎實 */
-:root[data-appearance="light"] body { -webkit-font-smoothing: auto; }
+/* 深色底的筆畫粗細取中間：antialiased（關掉 macOS 的筆畫加粗）太細、顯得暗，系統預設又太粗。
+   平滑只有這兩檔，所以從細的那檔描一圈 0.3px 的邊補回一半，描邊跟著字色走。
+   這是渲染層的描邊，不是字重，粗體仍然只換色。
+   淺色底不描：系統預設的筆畫加粗在紙上剛好，antialiased 反而讓深字又細又淡 */
+:root:not([data-appearance="light"]) body {
+  -webkit-font-smoothing: antialiased;
+  -webkit-text-stroke: 0.3px;
+}
 
 #content {
   /* 行寬隨視窗滿版，只留固定左右內距。 */
@@ -132,7 +143,7 @@ body {
 
 /* ── 區塊 ───────────────────────────────────────────── */
 
-p { margin: 0 0 1.1em; }
+p { margin: 0 0 0.6em; }   /* 行高 1.9 已經很鬆，段距再大，段落之間像斷開。比照參考版面收緊 */
 
 h1, h2, h3, h4, h5, h6 {
   font-weight: normal;           /* 中文靠字級與顏色分層，不靠字重 */
@@ -159,13 +170,19 @@ a { color: var(--link); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
 blockquote {
-  margin: 1.4em 0;
+  margin: 0.8em 0;
   padding: 0 0 0 1.2em;
   border-left: 2px solid var(--quote-bar);
-  color: var(--fg);
-  font-style: italic;
+  color: var(--quote-fg);   /* 不用斜體：中文沒有真的斜體字面，合成出來的歪字長段讀起來吃力 */
 }
 blockquote > :last-child { margin-bottom: 0; }
+/* 引文裡的引文（心得整段引書、書裡又引別人）：同一條左線只差一層縮排，分不出誰在說話。
+   改成淡橘底、橘色粗左線的區塊 */
+blockquote blockquote {
+  padding: 0.8em 1.2em;
+  border-left: 3px solid var(--accent);
+  background: var(--quote-tint);
+}
 /* 對照中點標題、點心得的引文會帶動另一欄（docs/SPEC.md 13.6）。書裡的 blockquote 是書的內容，
    點了不會怎樣，所以引文只算心得那欄的 */
 :root[data-linked] #content :is(h1, h2, h3, h4),
@@ -619,6 +636,7 @@ mark.mb-hl .mb-b { color: var(--hl-accent); }
 }
 .mb-pdf-page .textLayer :is(span, br) {
   color: transparent;
+  -webkit-text-stroke: 0;   /* 透明字只用來選取，描邊也不能畫出來 */
   position: absolute;
   white-space: pre;
   cursor: text;
