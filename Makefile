@@ -137,8 +137,8 @@ test-copy: app
 test-clean:
 	@case "$(ID)" in *[!a-zA-Z0-9-]*|"") echo "ID 只能有英數字與 -：$(ID)"; exit 1;; esac
 	$(quit_test)
-	@# 跟 clean 一樣先取消註冊再刪
-	@if [ -d "$(TEST_APP)" ]; then $(LSREGISTER) -u "$(TEST_APP)" 2>/dev/null || true; fi
+	@# 跟 clean 一樣先取消註冊再刪，.app 已經不在也照跑
+	@$(LSREGISTER) -u "$(TEST_APP)" 2>/dev/null || true
 	@rm -rf "$(TEST_DIR)"
 	@# defaults delete 會留下一個空的 plist，一起刪
 	@defaults delete "$(TEST_ID)" >/dev/null 2>&1 || true
@@ -167,7 +167,8 @@ uninstall:
 
 # 先取消註冊再刪：只刪資料夾的話 LaunchServices 還記著這份，.md 仍可能解析到已經不存在的它
 # 從沒打開過的那份（只跑過 make install、make release-zip）沒有註冊，lsregister -u 會回 -10814 擋住後面的刪除
+# .app 已經不在也照跑：舊版的清除只刪不取消註冊，留下的註冊要靠這行收掉，lsregister -u 對不存在的路徑一樣有效
 clean:
-	@if [ -d "$(BUNDLE)" ]; then $(LSREGISTER) -u "$(CURDIR)/$(BUNDLE)" 2>/dev/null || true; fi
+	@$(LSREGISTER) -u "$(CURDIR)/$(BUNDLE)" 2>/dev/null || true
 	@rm -rf .build
 	@echo "→ 已清除（字型快取 $(CACHE) 保留）"
