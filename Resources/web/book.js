@@ -375,6 +375,36 @@
   /* ── 先讀後丟：書的 CSS → 我們的語意 class ─────────────── */
 
   const BLOCK = /^(block|list-item|table|table-cell|flex|grid|flow-root)$/;
+  // 預設是行內的標籤。書把它們設成區塊時（圖說 <span class="caption">）要另起一行，
+  // 書的 CSS 丟掉後就會黏在前面那張圖的底線上
+  const INLINE = /^(span|a|em|strong|b|i|small|big|font|cite|q|abbr|code|label)$/;
+
+  /* 書指定的圖片寬高（calibre 轉的書幾乎都有：QR 碼 20%、行內小圖示 1em、大圖 98%）。
+   * 不照的話圖一律照原始像素排，小圖示撐得比字還大、QR 碼跟圖說排成一行。
+   * 讀「指定值」而不是排出來的寬度：圖在 iframe 裡還沒載，排出來是 0；百分比也要留著
+   * 對到我們的欄寬。元素不顯示時 getComputedStyle 回的就是計算值（百分比原樣、em 換成 px），
+   * 所以暫時把圖全部藏起來讀一次。px 換回 em，跟著我們的字級縮放 */
+  function readImageSizes(fdoc, win) {
+    const imgs = [...fdoc.body.querySelectorAll('section.mb-chapter img')];
+    if (!imgs.length) return [];
+    const hide = fdoc.createElement('style');
+    hide.textContent = 'img { display: none !important; }';
+    fdoc.head.appendChild(hide);
+    const conv = (v, fs, pct) => {
+      if (pct && /%$/.test(v)) return v;
+      if (!/px$/.test(v)) return null;
+      const em = parseFloat(v) / fs;
+      return em > 0 ? `${Math.round(em * 1000) / 1000}em` : null;
+    };
+    const out = imgs.map((img) => {
+      const c = win.getComputedStyle(img);
+      const fs = parseFloat(c.fontSize) || 16;
+      // 高度的百分比對的是外層的 auto 高度，等於沒設，不照
+      return [img, conv(c.width, fs, true), conv(c.height, fs, false)];
+    });
+    hide.remove();
+    return out.filter(([, w, h]) => w || h);
+  }
 
   function convertStyles(fdoc, win) {
     const cache = new Map();
@@ -389,6 +419,10 @@
           indent: parseFloat(c.textIndent) || 0,
           size: parseFloat(c.fontSize) || 16,
           display: c.display,
+          ml: parseFloat(c.marginLeft) || 0,
+          mr: parseFloat(c.marginRight) || 0,
+          width: parseFloat(c.width) || 0,
+          keep: /^avoid/.test(c.breakInside),
           valign: c.verticalAlign,
           // 四邊都有框線：書用方框圈起來的小標、重點（《書 E》的「【第一類】…」）
           boxed: ['Top', 'Right', 'Bottom', 'Left'].every((side) =>
@@ -399,6 +433,7 @@
       return cs;
     };
 
+    const sizes = readImageSizes(fdoc, win);
     const flags = [];
     const boxes = new Set();
     for (const el of fdoc.body.querySelectorAll('section.mb-chapter *')) {
@@ -421,14 +456,22 @@
         for (let p = el.parentElement; p && !inner; p = p.parentElement) inner = boxes.has(p);
         if (!inner) { cls.push('mb-box'); boxes.add(el); }
       }
+      if (INLINE.test(tag) && /^(block|flow-root|list-item)$/.test(me.display)) cls.push('mb-block');
       if (BLOCK.test(me.display)) {
+        // 左右邊距一樣大、各佔一成以上：書用邊距把這塊縮成置中的窄欄（圖說 margin: 0 40%，
+        // 寬度剛好跟上面的 QR 碼一樣）。邊距丟掉後它變成整欄寬，裡面再靠左就貼在欄的左緣、
+        // 跟置中的圖錯開，所以當成跟著上層置中
+        const narrow = me.ml >= parent.width * 0.1 && Math.abs(me.ml - me.mr) <= parent.width * 0.05;
         if (me.align !== parent.align || el.parentElement.localName === 'section') {
           if (me.align === 'center') cls.push('mb-center');
           else if (me.align === 'right' || me.align === 'end') cls.push('mb-right');
           // 置中的區塊裡又改回靠左（清單、段落），不標的話會跟著上層一起置中
-          else if (parent.align === 'center' || parent.align === 'right' || parent.align === 'end') cls.push('mb-left');
+          else if ((parent.align === 'center' || parent.align === 'right' || parent.align === 'end') && !(narrow && parent.align === 'center')) cls.push('mb-left');
         }
         if (me.indent > 1 && tag === 'p') cls.push('mb-indent');
+        // 書標了不可跨頁的圖塊（圖連同圖說）：翻頁模式下圖說才不會被切到下一頁。
+        // 只認含圖的區塊：有的書整本的段落都標了，照做會讓每頁底部空出一截
+        if (me.keep && el.querySelector('img, svg')) cls.push('mb-keep');
       }
       if (me.size < parent.size * 0.88 && !inHeading && tag !== 'sup' && tag !== 'sub') cls.push('mb-small');
       if (me.valign === 'super' && tag !== 'sup') cls.push('mb-sup');
@@ -484,6 +527,12 @@
       el.removeAttribute('style');
       el.removeAttribute('class');
       if (cls.length) el.setAttribute('class', cls.join(' '));
+    }
+    // 寫成 CSS 變數而不是直接寫 width：單張圖的整頁（mb-imgpage）與滿版那份要照頁面大小放，
+    // 由 base.css 決定哪裡用它
+    for (const [img, w, h] of sizes) {
+      if (w) img.style.setProperty('--mb-w', w);
+      if (h) img.style.setProperty('--mb-h', h);
     }
     fdoc.body.querySelectorAll('section.mb-chapter').forEach((s) => { s.className = 'mb-chapter'; });
   }

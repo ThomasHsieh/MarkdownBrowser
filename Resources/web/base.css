@@ -504,6 +504,10 @@ mark.mb-hl .mb-b { color: var(--hl-accent); }
 .mb-book section.mb-chapter + section.mb-chapter { margin-top: 4em; }
 .mb-book img,
 .mb-book svg { max-width: 100%; max-height: 92vh; height: auto; object-fit: contain; }
+/* 書指定的寬高（book.js 的 readImageSizes），沒指定就照原始大小 */
+.mb-book img { width: var(--mb-w, auto); height: var(--mb-h, auto); }
+/* 書設成區塊的行內標籤（圖說的 span）：另起一行 */
+.mb-book .mb-block { display: block; }
 .mb-book figure { margin: 1.6em 0; text-align: center; }
 .mb-book figcaption { color: var(--muted); font-size: 0.9em; }
 .mb-book aside { margin: 1.4em 0; padding: 0.6em 1em; border-left: 2px solid var(--rule); }
@@ -810,6 +814,7 @@ html.mb-paged .mb-book img,
 html.mb-paged .mb-book svg { max-height: calc(100vh - var(--pg-top) - var(--pg-bottom) - 4em); }
 html.mb-paged .mb-book img,
 html.mb-paged .mb-book figure,
+html.mb-paged .mb-book .mb-keep,
 html.mb-paged .mb-book table { break-inside: avoid; }
 html.mb-paged .mb-book h1,
 html.mb-paged .mb-book h2,
@@ -867,6 +872,8 @@ html.mb-paged .mb-book section.mb-imgpage svg {
   max-height: calc(100vh - var(--pg-top) - var(--pg-bottom) - 4px);
   max-width: 100%;
 }
+/* 整頁只有一張圖：照頁面放，不照書指定的寬高 */
+html.mb-paged .mb-book section.mb-imgpage img { width: auto; height: auto; }
 #mb-fullpage {
   display: none;
   position: fixed;
