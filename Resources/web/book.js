@@ -406,6 +406,12 @@
     return out.filter(([, w, h]) => w || h);
   }
 
+  // 沒有色相的顏色（黑、灰、白）。書的灰字是「次要」，彩色字才是作者要的色字
+  function gray(c) {
+    const v = (c.match(/[\d.]+/g) || []).map(Number);
+    return v.length >= 3 && Math.max(v[0], v[1], v[2]) - Math.min(v[0], v[1], v[2]) < 24;
+  }
+
   function convertStyles(fdoc, win) {
     const cache = new Map();
     const style = (el) => {
@@ -423,6 +429,7 @@
           mr: parseFloat(c.marginRight) || 0,
           width: parseFloat(c.width) || 0,
           keep: /^avoid/.test(c.breakInside),
+          color: c.color,
           valign: c.verticalAlign,
           // 四邊都有框線：書用方框圈起來的小標、重點（《書 E》的「【第一類】…」）
           boxed: ['Top', 'Right', 'Bottom', 'Left'].every((side) =>
@@ -475,6 +482,10 @@
       }
       if (me.size < parent.size * 0.88 && !inHeading && tag !== 'sup' && tag !== 'sub') cls.push('mb-small');
       if (me.valign === 'super' && tag !== 'sup') cls.push('mb-sup');
+      // 彩色的非粗體字（推薦序的作者署名）：顏色不照書（書是配白紙的，深色底多半看不見），
+      // 統一換成我們的色字。粗體不算 —— 粗體只有橘色一種，書的粗體再怎麼上色都一樣；
+      // 標題與連結也不算，它們有自己的顏色
+      if (me.color !== parent.color && !gray(me.color) && me.weight < 600 && !inHeading && !el.closest('a, strong, b')) cls.push('mb-tint');
       flags.push([el, cls]);
     }
     // 章名與副標常用同一層標籤（《書 A》兩個都是 h1，靠書的 CSS 分 1.5em 與 1.1em）。
@@ -490,6 +501,22 @@
           const entry = flags.find(([el]) => el === h);
           if (entry) entry[1].push('mb-subhead');
         }
+      }
+    }
+    // 標題裡另起一行的小字：「推薦序」這種標籤、主標後面的副標。書的 CSS 丟掉後幾行一樣大，
+    // 分不出哪行是章名。跟同一個標題裡最大的字比，不跟標題比：整個標題只有一行小字
+    // （只寫「01」的編號標題）就沒有主從可分。變淡色只在書自己把它設成灰色時 ——
+    // 有的書是主標小、後面的〈分類〉大，顏色一樣，那行小字是主標，不能淡掉
+    const flagOf = new Map(flags);
+    for (const h of fdoc.body.querySelectorAll('section.mb-chapter :is(h1, h2, h3, h4, h5, h6)')) {
+      let max = 0;
+      const walker = fdoc.createTreeWalker(h, NodeFilter.SHOW_TEXT);
+      for (let t = walker.nextNode(); t; t = walker.nextNode()) if (t.nodeValue.trim()) max = Math.max(max, style(t.parentElement).size);
+      for (const el of h.querySelectorAll('*')) {
+        const cls = flagOf.get(el);
+        if (!cls || !cls.includes('mb-block') || style(el).size >= max * 0.88) continue;
+        cls.push('mb-hsub');
+        if (style(el).color !== style(h).color && gray(style(el).color)) cls.push('mb-hmuted');
       }
     }
     // 偽標題：有些書（calibre 轉出來的特別多）整本沒有標題標籤，章節標題是一段加大加粗的

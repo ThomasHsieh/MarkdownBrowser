@@ -17,6 +17,7 @@
   --quote-fg: #c9c4b8;        /* 引文只比內文暗一點，9.1:1 */
   --quote-tint: #3a2c23;      /* 引文裡的引文：橘色調的底，引文字 7.7、粗體 5.6 */
   --link: #7aa6d6;
+  --tint: #f2a65a;            /* 書的色字（作者署名）：亮橘，8.4:1 */
   --code-bg: #242424;
   --th-fg: #ededed;
   --th-bg: rgba(255, 255, 255, 0.035);
@@ -66,6 +67,7 @@
   --quote-fg: #57534b;        /* 7.2:1 */
   --quote-tint: #f3eae2;      /* 參考版面的 #F1E6DD 上橘只有 4.48，淡一點回到 4.63；引文字 6.4 */
   --link: #1d5fa8;
+  --tint: #6b4a2b;            /* 7.5:1 */
   --code-bg: #f0ece3;
   --th-fg: #1f1f1f;
   --th-bg: rgba(0, 0, 0, 0.035);
@@ -508,6 +510,11 @@ mark.mb-hl .mb-b { color: var(--hl-accent); }
 .mb-book img { width: var(--mb-w, auto); height: var(--mb-h, auto); }
 /* 書設成區塊的行內標籤（圖說的 span）：另起一行 */
 .mb-book .mb-block { display: block; }
+/* 標題裡另起一行的小字（標籤、副標）：小一號；書把它設成灰色的才淡色 */
+.mb-book .mb-hsub { font-size: 0.72em; }
+.mb-book .mb-hmuted { color: var(--muted); }
+/* 書的色字（非粗體的彩色字）：統一一個色，不照書 */
+.mb-book .mb-tint { color: var(--tint); }
 .mb-book figure { margin: 1.6em 0; text-align: center; }
 .mb-book figcaption { color: var(--muted); font-size: 0.9em; }
 .mb-book aside { margin: 1.4em 0; padding: 0.6em 1em; border-left: 2px solid var(--rule); }
