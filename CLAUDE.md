@@ -258,6 +258,9 @@ EPUB 的規格在 `docs/SPEC.md` 第 13 節。最容易被改壞的：
   `CGEvent.postToPid` 直接送給測試版，App 在背景也收得到、不必帶到前景。滑鼠不行：`postToPid`
   的點擊送不進 SwiftUI 控制項，要點側欄或分段控制時先跟使用者說好再用 HID。能繞就繞，例如版面模式
   在 App 關著時用 `defaults write` 改測試版的設定再重開。
+  **HID 點擊之前先把測試版帶到前景**：HID 點擊是送到螢幕座標，不是送給 App。測試版在背景、
+  被別的視窗蓋住時，點擊會落進蓋在上面的那個視窗（實測點進了終端機），測試版毫無反應，看起來像點錯位置。
+  先用 System Events 照 PID 設 `frontmost`，確認前景真的是它再點
   `screencapture -l` 也會抓到 SwiftUI 隱藏的空視窗，先確認視窗標題再截
 - **測試檔放家目錄底下**（例如 `~/Library/Caches/…`），不要放 `/tmp`：開檔時
   `resolvingSymlinksInPath` 把 `/private/tmp` 變成 `/tmp`，列資料夾卻得到 `/private/tmp`，
