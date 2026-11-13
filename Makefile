@@ -172,5 +172,8 @@ uninstall:
 # .app 已經不在也照跑：舊版的清除只刪不取消註冊，留下的註冊要靠這行收掉，lsregister -u 對不存在的路徑一樣有效
 clean:
 	@$(LSREGISTER) -u "$(CURDIR)/$(BUNDLE)" 2>/dev/null || true
-	@rm -rf .build
+	@# 編輯器的 sourcekit-lsp 會同時往 .build/index-build 寫索引，rm 走到一半目錄又長出檔案，
+	@# 報「Directory not empty」。重試幾次就刪得乾淨；之後它再建回來的只是索引，沒有 App。
+	@for i in 1 2 3 4 5; do rm -rf .build 2>/dev/null && break; sleep 0.5; done; \
+	 if [ -e .build ]; then echo "✗ .build 刪不乾淨（有程式一直在寫）"; exit 1; fi
 	@echo "→ 已清除（字型快取 $(CACHE) 保留）"
