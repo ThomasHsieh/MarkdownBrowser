@@ -422,6 +422,9 @@ function settleOn(target) {
 
 function landSync(target, req, matched, missText) {
   const background = !!req.background;
+  // 開檔還原的校正不能再拉回去：同步多半是平滑捲動，校正若早於它起步，看到的位置還是還原時那裡，
+  // 會當成沒人動過而把剛換心得的位置拉回舊處（SPEC 5.6）
+  restoredY = null;
   if (target) reveal(target, !background);
   else window.scrollTo({ top: 0, behavior: background ? 'auto' : 'smooth' });
   settleOn(target);
