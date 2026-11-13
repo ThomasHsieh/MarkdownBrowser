@@ -170,7 +170,7 @@ struct Sidebar: View {
             }
         }
         .listStyle(.sidebar)
-        .onChange(of: state.documentURL) { _ in expandedOrphans = [] }
+        .onChange(of: state.documentURL) { expandedOrphans = [] }
     }
 
     @ViewBuilder
