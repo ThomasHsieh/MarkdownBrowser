@@ -813,7 +813,7 @@ final class DocumentState: PaneDocument {
         // 換檔：渲染完再同步。只選了章（下拉選單、固定版面翻頁跨章）時，還原到的位置在這一章裡
         // 就留著，不在才到章的標題 —— 13.3 書的規則反過來用（docs/SPEC.md 5.6）
         var switching = request
-        if text == nil { switching["keep"] = true }
+        if text == nil { switching["keepIfInChapter"] = true }
         claimNote(target.file) { [self] ok in
             if ok { queueSync(switching) }
             else { book.bridge?.toast("那章的心得開在其他視窗") }

@@ -88,9 +88,14 @@ function restoreAnchor(anchor) {
  * 所以記「畫面頂端所在那一段的標題」加「讀到這一段的幾成」，標題不見了退回整份的比例。
  * 開檔還原到版面穩定之前不回報，那段期間的位置是錯的（字型、圖片晚到會重新斷行）。 */
 let currentDoc = null;        // Swift 送來的路徑，回報時帶著，換檔時晚到的才不會記到新檔上
-let restoring = 0;            // 還原中：不回報。值是開始的時間
+let restoringSince = 0;       // 開檔還原開始的時間，0 是沒在還原；還原中不回報
 let restoredY = null;         // 還原時自己捲到的位置；被別人捲走就不再校正
 let restoredAny = false;      // 這次開檔有沒有還原到記住的位置（沒有紀錄就是 false）
+
+/* 位置的記錄、還原與平滑捲動都要夾在這個範圍內，原本三處各算一次。文件比視窗短時是 0 */
+function maxScrollY() {
+  return Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+}
 
 function sectionAt(y) {
   const heads = content.querySelectorAll('h1, h2, h3, h4');
@@ -109,7 +114,7 @@ function sectionAt(y) {
 
 function capturePosition() {
   const y = window.scrollY;
-  const max = document.documentElement.scrollHeight - window.innerHeight;
+  const max = maxScrollY();
   const pos = { whole: max > 0 ? Math.min(1, y / max) : 0 };
   const sec = sectionAt(y);
   if (sec) {
@@ -126,39 +131,42 @@ function restorePosition(pos) {
     const sec = sectionAt(window.scrollY + el.getBoundingClientRect().top);
     if (sec && sec.el === el) y = sec.top + (pos.part || 0) * sec.height;
   }
-  if (y == null) {
-    const max = document.documentElement.scrollHeight - window.innerHeight;
-    y = (pos.whole || 0) * Math.max(0, max);
-  }
+  if (y == null) y = (pos.whole || 0) * maxScrollY();
   window.scrollTo(0, Math.max(0, Math.round(y)));
   restoredY = window.scrollY;
 }
 
+/* 現在報得出位置嗎：沒在讀心得（書那欄）、或開檔還原的版面還沒穩，都不報。
+ * 捲動停下的回報與 Swift 換檔前直接拿（MB.notePosition）共用，兩邊才不會一個報一個不報 */
+function canReportPosition() {
+  return !!currentDoc && !restoringSince && !(window.MBBook && window.MBBook.active);
+}
+
 function reportPosition() {
-  if (!currentDoc || restoring || (window.MBBook && window.MBBook.active)) return;
+  if (!canReportPosition()) return;
   toSwift({ type: 'notePosition', doc: currentDoc, position: capturePosition() });
 }
 
 /* 開檔還原：版面穩了再對一次，然後才開始回報。期間使用者自己動過、或被同步帶走（位置不再是
  * 還原時捲到的那裡）就不校正 —— 被帶走的地方照樣要記（SPEC 5.6），所以結束時一律回報一次 */
 function beginRestore(pos) {
-  const started = restoring = Date.now();
+  const started = restoringSince = Date.now();
   restoredY = null;
   restoredAny = !!pos;
   if (pos) restorePosition(pos);
   afterLayout(() => {
-    if (restoring !== started) return;
+    if (restoringSince !== started) return;
     if (pos && lastUserInput <= started && restoredY != null && Math.abs(window.scrollY - restoredY) <= 2) {
       restorePosition(pos);
     }
-    restoring = 0;
+    restoringSince = 0;
     reportPosition();
   });
 }
 
 let positionTimer = null;
 window.addEventListener('scroll', () => {
-  if (restoring && lastUserInput > restoring) { restoring = 0; }   // 使用者接手，不再等版面
+  if (restoringSince && lastUserInput > restoringSince) { restoringSince = 0; }   // 使用者接手，不再等版面
   clearTimeout(positionTimer);
   positionTimer = setTimeout(reportPosition, 300);
 }, { passive: true });
@@ -190,7 +198,7 @@ MB.debugLog = function (...parts) {
 
 /* 換檔、關窗、結束 App 時 Swift 直接拿（訊息可能來不及送到） */
 MB.notePosition = function () {
-  if (!currentDoc || restoring || (window.MBBook && window.MBBook.active)) return null;
+  if (!canReportPosition()) return null;
   return { doc: currentDoc, position: capturePosition() };
 };
 
@@ -293,8 +301,7 @@ function pageStep() {
 }
 
 function glideBy(dy) {
-  const max = document.documentElement.scrollHeight - window.innerHeight;
-  const target = Math.max(0, Math.min((glide ? glide.target : window.scrollY) + dy, max));
+  const target = Math.max(0, Math.min((glide ? glide.target : window.scrollY) + dy, maxScrollY()));
   if (reducedMotion()) { glide = null; window.scrollTo(0, target); return; }
   if (glide) { glide.target = target; return; }                 // 跑到一半：只推目標，速度帶著走
   const y = window.scrollY;
@@ -451,7 +458,7 @@ MB.syncTo = function (req) {
       range = heads.slice(start, end);
     }
   }
-  if (req.keep && !req.text && keepRestoredFor(req, scope, range)) return;
+  if (req.keepIfInChapter && !req.text && keepRestoredFor(req, scope, range)) return;
   const hit = req.text ? bestHeading(range, req.text) : null;
   landSync(hit || scope, req, !!hit || !req.text, '找不到對應小節，已跳到章首');
 };
