@@ -96,7 +96,9 @@ function sectionAt(y) {
   const heads = content.querySelectorAll('h1, h2, h3, h4');
   let cur = null, next = null;
   for (const el of heads) {
-    const top = window.scrollY + el.getBoundingClientRect().top;
+    // 段落從標題的 scroll-margin 算起：跳到標題時就停在那裡，不扣掉的話會被算成上一段的結尾
+    const margin = parseFloat(getComputedStyle(el).scrollMarginTop) || 0;
+    const top = window.scrollY + el.getBoundingClientRect().top - margin;
     if (top <= y + 1) cur = { el, top };
     else { next = top; break; }
   }
