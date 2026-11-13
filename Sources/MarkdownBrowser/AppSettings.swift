@@ -83,6 +83,16 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(bookPositions, forKey: Keys.bookPositions) }
     }
 
+    /// 每份心得的閱讀位置（docs/SPEC.md 5.6）：心得路徑 → `{id, part, whole, t}`。
+    /// 跟書分開存；`t` 是存的時間，超過上限丟最舊的。
+    private(set) var notePositions: [String: [String: Any]] {
+        didSet { defaults.set(notePositions, forKey: Keys.notePositions) }
+    }
+
+    /// 心得一本書就二、三十份，UserDefaults 整份在啟動時讀進記憶體，只增不減會越來越肥。
+    /// 不存在的檔不主動掃：外接硬碟、雲端硬碟沒掛上時會把還在的檔當成已刪除
+    static let notePositionLimit = 500
+
     /// 上次讀的檔。啟動時若沒有 Finder 指定的檔案，就還原這一份。
     var lastDocumentURL: URL? {
         guard let path = defaults.string(forKey: Keys.lastDocument),
@@ -131,6 +141,7 @@ final class AppSettings: ObservableObject {
         static let libraryFolders = "libraryFolders"
         static let lastNoteByFolder = "lastNoteByFolder"
         static let bookPositions = "bookPositions"
+        static let notePositions = "notePositions"
     }
 
     private init() {
@@ -151,6 +162,7 @@ final class AppSettings: ObservableObject {
         libraryFolders = (defaults.stringArray(forKey: Keys.libraryFolders) ?? []).map { URL(fileURLWithPath: $0) }
         lastNoteByFolder = defaults.dictionary(forKey: Keys.lastNoteByFolder) as? [String: String] ?? [:]
         bookPositions = defaults.dictionary(forKey: Keys.bookPositions) as? [String: [String: Any]] ?? [:]
+        notePositions = defaults.dictionary(forKey: Keys.notePositions) as? [String: [String: Any]] ?? [:]
 
         recentDocuments = (defaults.stringArray(forKey: Keys.recents) ?? [])
             .map { URL(fileURLWithPath: $0) }
@@ -224,6 +236,31 @@ final class AppSettings: ObservableObject {
 
     func setBookPosition(_ position: [String: Any], for book: URL) {
         bookPositions[book.path] = position
+    }
+
+    func notePosition(for note: URL) -> [String: Any]? {
+        notePositions[note.path]?.filter { $0.key != "t" }
+    }
+
+    func setNotePosition(_ position: [String: Any], for note: URL) {
+        var entry = position.filter { !($0.value is NSNull) }    // UserDefaults 存不了 NSNull
+        entry["t"] = Date().timeIntervalSince1970
+        var all = notePositions
+        all[note.path] = entry
+        if all.count > Self.notePositionLimit {
+            let oldest = all.sorted { ($0.value["t"] as? Double ?? 0) < ($1.value["t"] as? Double ?? 0) }
+            for (key, _) in oldest.prefix(all.count - Self.notePositionLimit) { all[key] = nil }
+        }
+        notePositions = all
+    }
+
+    /// 心得在 App 開著時被改名：位置跟著搬。
+    func moveNotePosition(from old: URL, to new: URL) {
+        guard old.path != new.path, let entry = notePositions[old.path] else { return }
+        var all = notePositions
+        all[old.path] = nil
+        all[new.path] = entry
+        notePositions = all
     }
 
     func lastNote(in folder: URL) -> URL? {

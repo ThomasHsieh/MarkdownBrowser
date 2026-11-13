@@ -114,6 +114,10 @@ struct WebPane: NSViewRepresentable {
             case "bookPosition":
                 state.positionChanged(body)
 
+            case "notePosition":
+                guard let doc = body["doc"] as? String, let position = body["position"] as? [String: Any] else { return }
+                (state as? DocumentState)?.notePositionChanged(doc: doc, position: position)
+
             case "bookToc":
                 (state as? BookPane)?.setPdfToc(body["toc"] as? [[String: Any]] ?? [])
 
@@ -166,10 +170,24 @@ struct WebPane: NSViewRepresentable {
 
         /// 標記跟內文在同一次呼叫裡送進去，畫面上不會先閃一下沒畫線的版本。
         /// `highlights` 為 nil 是重載同一份文件：網頁端沿用記憶體裡的標記。
-        func render(markdown: String, keepScroll: Bool, highlights: [String: Any]?) {
+        /// `position` 是開檔時要還原的閱讀位置（docs/SPEC.md 5.6），`doc` 讓網頁端回報位置時帶著。
+        func render(markdown: String, doc: String, keepScroll: Bool, highlights: [String: Any]?,
+                    position: [String: Any]?) {
             guard ready else { return }
-            let extra = highlights.map { ", highlights: \(json($0))" } ?? ""
-            eval("MB.render(\(literal(markdown)), {keepScroll: \(keepScroll)\(extra)})")
+            var extra = highlights.map { ", highlights: \(json($0))" } ?? ""
+            if let position { extra += ", position: \(json(position))" }
+            eval("MB.render(\(literal(markdown)), {doc: \(literal(doc)), keepScroll: \(keepScroll)\(extra)})")
+        }
+
+        /// 換檔、關窗、結束 App 時直接拿目前位置：網頁端的訊息可能來不及送到。
+        /// 還原中（版面未穩）網頁端回 null。
+        func notePosition(completion: @escaping ((doc: String, position: [String: Any])?) -> Void) {
+            guard ready, let webView else { completion(nil); return }
+            webView.evaluateJavaScript("MB.notePosition()") { result, _ in
+                guard let body = result as? [String: Any], let doc = body["doc"] as? String,
+                      let position = body["position"] as? [String: Any] else { completion(nil); return }
+                completion((doc, position))
+            }
         }
 
         func setHighlights(_ payload: [String: Any]) {

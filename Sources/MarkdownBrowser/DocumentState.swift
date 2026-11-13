@@ -370,8 +370,34 @@ final class DocumentState: PaneDocument {
 
     override func renderContent(_ url: URL, keepScroll: Bool, highlights: [String: Any]?) -> Bool {
         guard let text = try? String(contentsOf: url, encoding: .utf8) else { return false }
-        bridge?.render(markdown: text, keepScroll: keepScroll, highlights: highlights)
+        // 重載同一份走 5.4 的錨點，只有開檔才還原記住的位置（docs/SPEC.md 5.6）
+        bridge?.render(markdown: text, doc: url.path, keepScroll: keepScroll, highlights: highlights,
+                       position: keepScroll ? nil : settings.notePosition(for: url))
         return true
+    }
+
+    // MARK: - 閱讀位置（docs/SPEC.md 5.6）
+
+    /// 網頁端捲動停下時回報。`doc` 是它當時在讀的檔，換檔時晚到的照樣記到那一份。
+    func notePositionChanged(doc: String, position: [String: Any]) {
+        let url = URL(fileURLWithPath: doc)
+        // 改名後才到的舊路徑不記：換到新檔名前的補存帶的還是舊路徑，記了就在已經不存在的路徑上留一筆
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        settings.setNotePosition(position, for: url)
+    }
+
+    /// 換檔、關窗、結束 App 前補存一次：最後一次捲動的回報可能還在去抖、還沒送出。
+    override func prepareToCloseAsync(_ done: @escaping () -> Void) {
+        guard documentURL != nil, let bridge else { super.prepareToCloseAsync(done); return }
+        bridge.notePosition { [self] result in
+            if let result { notePositionChanged(doc: result.doc, position: result.position) }
+            closeAfterSavingPosition(done)
+        }
+    }
+
+    /// closure 裡不能直接呼叫 super（明確捕捉 self 時編譯器不支援）
+    private func closeAfterSavingPosition(_ done: @escaping () -> Void) {
+        super.prepareToCloseAsync(done)
     }
 
     override func pushInitialState() {
@@ -380,6 +406,7 @@ final class DocumentState: PaneDocument {
     }
 
     override func followRenamedDocument(to newURL: URL) {
+        if let old = documentURL { settings.moveNotePosition(from: old, to: newURL) }
         // 一檔一窗：新檔名若已經開在別的視窗，就交給那個視窗，這裡不重複開。
         // 不帶到前景 —— 改名多半是 AI 在背景做的，不該搶走焦點
         guard WindowRouter.shared.window(reading: newURL) == nil else { return }
@@ -783,9 +810,12 @@ final class DocumentState: PaneDocument {
             bridge?.syncTo(request)
             return
         }
-        // 換檔：渲染完再同步
+        // 換檔：渲染完再同步。只選了章（下拉選單、固定版面翻頁跨章）時，還原到的位置在這一章裡
+        // 就留著，不在才到章的標題 —— 13.3 書的規則反過來用（docs/SPEC.md 5.6）
+        var switching = request
+        if text == nil { switching["keep"] = true }
         claimNote(target.file) { [self] ok in
-            if ok { queueSync(request) }
+            if ok { queueSync(switching) }
             else { book.bridge?.toast("那章的心得開在其他視窗") }
         }
     }
@@ -897,7 +927,9 @@ protocol WebBridge: AnyObject {
     func printDocument()
 
     // 標記（docs/SPEC.md 12.8）
-    func render(markdown: String, keepScroll: Bool, highlights: [String: Any]?)
+    func render(markdown: String, doc: String, keepScroll: Bool, highlights: [String: Any]?,
+                position: [String: Any]?)
+    func notePosition(completion: @escaping ((doc: String, position: [String: Any])?) -> Void)
     func setHighlights(_ payload: [String: Any])
     func setHighlightBanner(_ text: String?, actions: [(String, String)])
     func revealHighlight(_ id: String)

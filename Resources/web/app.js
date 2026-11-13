@@ -83,6 +83,92 @@ function restoreAnchor(anchor) {
   if (typeof anchor.y === 'number') window.scrollTo(0, anchor.y);
 }
 
+/* ── 心得的閱讀位置（docs/SPEC.md 5.6）──────────────────────
+ * 跨次開啟用的位置，跟上面重載用的錨點分開：下次打開時字級、欄寬都可能不同，像素不準，
+ * 所以記「畫面頂端所在那一段的標題」加「讀到這一段的幾成」，標題不見了退回整份的比例。
+ * 開檔還原到版面穩定之前不回報，那段期間的位置是錯的（字型、圖片晚到會重新斷行）。 */
+let currentDoc = null;        // Swift 送來的路徑，回報時帶著，換檔時晚到的才不會記到新檔上
+let restoring = 0;            // 還原中：不回報。值是開始的時間
+let restoredY = null;         // 還原時自己捲到的位置；被別人捲走就不再校正
+let restoredAny = false;      // 這次開檔有沒有還原到記住的位置（沒有紀錄就是 false）
+
+function sectionAt(y) {
+  const heads = content.querySelectorAll('h1, h2, h3, h4');
+  let cur = null, next = null;
+  for (const el of heads) {
+    const top = window.scrollY + el.getBoundingClientRect().top;
+    if (top <= y + 1) cur = { el, top };
+    else { next = top; break; }
+  }
+  if (!cur) return null;
+  const end = next != null ? next : document.documentElement.scrollHeight;
+  return { el: cur.el, top: cur.top, height: Math.max(1, end - cur.top) };
+}
+
+function capturePosition() {
+  const y = window.scrollY;
+  const max = document.documentElement.scrollHeight - window.innerHeight;
+  const pos = { whole: max > 0 ? Math.min(1, y / max) : 0 };
+  const sec = sectionAt(y);
+  if (sec) {
+    pos.id = sec.el.id;
+    pos.part = Math.max(0, Math.min(1, (y - sec.top) / sec.height));
+  }
+  return pos;
+}
+
+function restorePosition(pos) {
+  let y = null;
+  const el = pos.id ? document.getElementById(pos.id) : null;
+  if (el) {
+    const sec = sectionAt(window.scrollY + el.getBoundingClientRect().top);
+    if (sec && sec.el === el) y = sec.top + (pos.part || 0) * sec.height;
+  }
+  if (y == null) {
+    const max = document.documentElement.scrollHeight - window.innerHeight;
+    y = (pos.whole || 0) * Math.max(0, max);
+  }
+  window.scrollTo(0, Math.max(0, Math.round(y)));
+  restoredY = window.scrollY;
+}
+
+function reportPosition() {
+  if (!currentDoc || restoring || (window.MBBook && window.MBBook.active)) return;
+  toSwift({ type: 'notePosition', doc: currentDoc, position: capturePosition() });
+}
+
+/* 開檔還原：版面穩了再對一次，然後才開始回報。期間使用者自己動過、或被同步帶走（位置不再是
+ * 還原時捲到的那裡）就不校正 —— 被帶走的地方照樣要記（SPEC 5.6），所以結束時一律回報一次 */
+function beginRestore(pos) {
+  const started = restoring = Date.now();
+  restoredY = null;
+  restoredAny = !!pos;
+  if (pos) restorePosition(pos);
+  afterLayout(() => {
+    if (restoring !== started) return;
+    if (pos && lastUserInput <= started && restoredY != null && Math.abs(window.scrollY - restoredY) <= 2) {
+      restorePosition(pos);
+    }
+    restoring = 0;
+    reportPosition();
+  });
+}
+
+let positionTimer = null;
+window.addEventListener('scroll', () => {
+  if (restoring && lastUserInput > restoring) { restoring = 0; }   // 使用者接手，不再等版面
+  clearTimeout(positionTimer);
+  positionTimer = setTimeout(reportPosition, 300);
+}, { passive: true });
+
+/* 由書帶動換心得（SPEC 5.6）：還原到的位置在這一章（scope 起到下一個同級以上標題之前）就留著 */
+function restoredInside(scope, range) {
+  if (!restoredAny) return false;
+  if (!scope) return true;                       // 整份就是那一章
+  const sec = sectionAt(window.scrollY);
+  return !!sec && range.includes(sec.el);
+}
+
 /* ── 渲染 ───────────────────────────────────────────── */
 
 const MB = {};
@@ -95,11 +181,21 @@ MB.debugLog = function (...parts) {
   toSwift({ type: 'debugLog', text });
 };
 
+/* 換檔、關窗、結束 App 時 Swift 直接拿（訊息可能來不及送到） */
+MB.notePosition = function () {
+  if (!currentDoc || restoring || (window.MBBook && window.MBBook.active)) return null;
+  return { doc: currentDoc, position: capturePosition() };
+};
+
 let renderedAt = 0;
 
 MB.render = function (markdown, opts) {
   opts = opts || {};
   renderedAt = Date.now();
+  // 換檔前把舊檔還沒送出的位置送出去，帶的是舊路徑，Swift 記到對的那份
+  if (positionTimer && currentDoc && opts.doc !== currentDoc) reportPosition();
+  clearTimeout(positionTimer);
+  positionTimer = null;
   if (window.MBBook) window.MBBook.deactivate();
   const anchor = opts.keepScroll ? captureAnchor() : null;
   const hl = window.MBHighlights;
@@ -130,8 +226,9 @@ MB.render = function (markdown, opts) {
   if (hl) hl.afterRender(opts.highlights, kept);
   else if (findState.query) runFind(findState.query, false);
 
+  currentDoc = opts.doc || null;
   if (anchor) restoreAnchor(anchor);
-  else window.scrollTo(0, 0);
+  else { window.scrollTo(0, 0); beginRestore(opts.position || null); }
 
   toSwift({ type: 'outline', outline: outline });
 };
@@ -344,6 +441,7 @@ MB.syncTo = function (req) {
       range = heads.slice(start, end);
     }
   }
+  if (req.keep && !req.text && restoredInside(scope, range)) return;
   const hit = req.text ? bestHeading(range, req.text) : null;
   landSync(hit || scope, req, !!hit || !req.text, '找不到對應小節，已跳到章首');
 };
