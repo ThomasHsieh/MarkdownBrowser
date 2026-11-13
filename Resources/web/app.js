@@ -163,12 +163,17 @@ window.addEventListener('scroll', () => {
   positionTimer = setTimeout(reportPosition, 300);
 }, { passive: true });
 
-/* 由書帶動換心得（SPEC 5.6）：還原到的位置在這一章（scope 起到下一個同級以上標題之前）就留著 */
-function restoredInside(scope, range) {
-  if (!restoredAny) return false;
-  if (!scope) return true;                       // 整份就是那一章
-  const sec = sectionAt(window.scrollY);
-  return !!sec && range.includes(sec.el);
+/* 由書帶動換心得（SPEC 5.6）：還原到的位置在這一章（scope 起到下一個同級以上標題之前）就留著。
+ * 決策在 notepos.js（make test 測得到），這裡只量 DOM：「書要了章標題」與「心得裡找到了」要分開傳，
+ * 找不到時 scope 也是 null，混在一起就會被當成「整份是那一章」而留在舊位置 */
+function keepRestoredFor(req, scope, range) {
+  const sec = scope ? sectionAt(window.scrollY) : null;
+  return window.MBNotePos.keepRestored({
+    restored: restoredAny,
+    scopeAsked: !!req.scope,
+    scopeFound: !!scope,
+    inside: !!sec && range.includes(sec.el),
+  });
 }
 
 /* ── 渲染 ───────────────────────────────────────────── */
@@ -443,7 +448,7 @@ MB.syncTo = function (req) {
       range = heads.slice(start, end);
     }
   }
-  if (req.keep && !req.text && restoredInside(scope, range)) return;
+  if (req.keep && !req.text && keepRestoredFor(req, scope, range)) return;
   const hit = req.text ? bestHeading(range, req.text) : null;
   landSync(hit || scope, req, !!hit || !req.text, '找不到對應小節，已跳到章首');
 };

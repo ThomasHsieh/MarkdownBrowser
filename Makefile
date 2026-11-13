@@ -60,6 +60,8 @@ check:
 # 章節對應（ChapterMap）的比對規則。fixture 是自編的，私人書庫的總體檢見 CLAUDE.md「書與對照」
 test:
 	@swift test
+	@if command -v node >/dev/null 2>&1; then node --test Tests/web/*.test.js; \
+	else echo "  ⚠️  沒有 node，略過網頁端的測試"; fi
 
 app: check fonts build icon-assets
 	@echo "→ 組 $(BUNDLE)"

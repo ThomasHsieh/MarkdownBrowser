@@ -6,8 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 建置與執行
 
-自動化測試只有兩組：`make test` 跑章節對應（`ChapterMap`）的比對規則（fixture 是自編的目錄與心得），
-以及心得閱讀位置的上限淘汰與改名搬 key（`NotePositionStore`）。
+自動化測試有三組，都由 `make test` 跑：章節對應（`ChapterMap`）的比對規則（fixture 是自編的目錄與心得）、
+心得閱讀位置的上限淘汰與改名搬 key（`NotePositionStore`），以及網頁端不碰 DOM 的決策（`Tests/web/`，
+`node --test`，沒裝 node 就略過）。網頁端要測的邏輯先抽成純函式放進獨立的檔（例如 `notepos.js`）。
 `make check` 只檢查網頁端 JS 的語法（`make app` 會先跑）。其餘的驗證方式是
 `make run` 後拿真實的中文 Markdown（`~/books/心得/`）開起來看。
 
@@ -21,7 +22,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 make              # = make app：JS 語法檢查 → 取字型 → swift build -c release → 組 .app → ad-hoc 簽章
 make check        # 只跑 node --check Resources/web/*.js（沒裝 node 就略過）
-make test         # swift test：ChapterMap 的比對規則、NotePositionStore（Tests/MarkdownBrowserTests）
+make test         # swift test（ChapterMap、NotePositionStore）＋ node --test（Tests/web/）
 make run          # 建置後重開 .build/ 那份（舊的先正常結束，不動安裝版）
 make test-copy ID=epubtest  # 另一個 bundle ID 的測試版，放 ~/Library/Caches/MarkdownBrowser-test/<ID>/
 make test-clean ID=epubtest # 結束測試版、取消註冊、刪掉那個資料夾與它的 UserDefaults
