@@ -83,12 +83,17 @@ function restoreAnchor(anchor) {
   if (typeof anchor.y === 'number') window.scrollTo(0, anchor.y);
 }
 
+/* 這一欄在顯示書（book.js 接手）。書那欄也載入 app.js，心得專用的事都要先問這個 */
+function bookActive() {
+  return !!(window.MBBook && window.MBBook.active);
+}
+
 /* ── 心得的閱讀位置（docs/SPEC.md 5.6）──────────────────────
  * 跨次開啟用的位置，跟上面重載用的錨點分開：下次打開時字級、欄寬都可能不同，像素不準，
  * 所以記「畫面頂端所在那一段的標題」加「讀到這一段的幾成」，標題不見了退回整份的比例。
  * 開檔還原到版面穩定之前不回報，那段期間的位置是錯的（字型、圖片晚到會重新斷行）。 */
 let currentDoc = null;        // Swift 送來的路徑，回報時帶著，換檔時晚到的才不會記到新檔上
-let restoringSince = 0;       // 開檔還原開始的時間，0 是沒在還原；還原中不回報
+let restoringSince = null;    // 開檔還原開始的時間，null 是沒在還原；還原中不回報
 let restoredY = null;         // 還原時自己捲到的位置；被別人捲走就不再校正
 let restoredAny = false;      // 這次開檔有沒有還原到記住的位置（沒有紀錄就是 false）
 
@@ -139,7 +144,7 @@ function restorePosition(pos) {
 /* 現在報得出位置嗎：沒在讀心得（書那欄）、或開檔還原的版面還沒穩，都不報。
  * 捲動停下的回報與 Swift 換檔前直接拿（MB.notePosition）共用，兩邊才不會一個報一個不報 */
 function canReportPosition() {
-  return !!currentDoc && !restoringSince && !(window.MBBook && window.MBBook.active);
+  return !!currentDoc && restoringSince === null && !bookActive();
 }
 
 function reportPosition() {
@@ -159,14 +164,14 @@ function beginRestore(pos) {
     if (pos && lastUserInput <= started && restoredY != null && Math.abs(window.scrollY - restoredY) <= 2) {
       restorePosition(pos);
     }
-    restoringSince = 0;
+    restoringSince = null;
     reportPosition();
   });
 }
 
 let positionTimer = null;
 window.addEventListener('scroll', () => {
-  if (restoringSince && lastUserInput > restoringSince) { restoringSince = 0; }   // 使用者接手，不再等版面
+  if (restoringSince !== null && lastUserInput > restoringSince) { restoringSince = null; }   // 使用者接手，不再等版面
   clearTimeout(positionTimer);
   positionTimer = setTimeout(reportPosition, 300);
 }, { passive: true });
@@ -174,9 +179,9 @@ window.addEventListener('scroll', () => {
 /* 由書帶動換心得（SPEC 5.6）：還原到的位置在這一章（scope 起到下一個同級以上標題之前）就留著。
  * 決策在 notepos.js（make test 測得到），這裡只量 DOM：「書要了章標題」與「心得裡找到了」要分開傳，
  * 找不到時 scope 也是 null，混在一起就會被當成「整份是那一章」而留在舊位置 */
-function keepRestoredFor(req, scope, range) {
+function keepIfInChapterFor(req, scope, range) {
   const sec = scope ? sectionAt(window.scrollY) : null;
-  return window.MBNotePos.keepRestored({
+  return window.MBNotePos.keepIfInChapter({
     restored: restoredAny,
     scopeAsked: !!req.scope,
     scopeFound: !!scope,
@@ -442,7 +447,7 @@ function landSync(target, req, matched, missText) {
 }
 
 MB.syncTo = function (req) {
-  if (window.MBBook && window.MBBook.active) return window.MBBook.syncTo(req);
+  if (bookActive()) return window.MBBook.syncTo(req);
   const heads = [...content.querySelectorAll('h1, h2, h3, h4')];
   let scope = null, range = heads;
   if (req.scope) {
@@ -458,7 +463,7 @@ MB.syncTo = function (req) {
       range = heads.slice(start, end);
     }
   }
-  if (req.keepIfInChapter && !req.text && keepRestoredFor(req, scope, range)) return;
+  if (req.keepIfInChapter && !req.text && keepIfInChapterFor(req, scope, range)) return;
   const hit = req.text ? bestHeading(range, req.text) : null;
   landSync(hit || scope, req, !!hit || !req.text, '找不到對應小節，已跳到章首');
 };
@@ -500,7 +505,7 @@ content.addEventListener('click', (e) => {
     text: h.textContent.trim(),
     level: parseInt(h.tagName.substring(1), 10),
   };
-  if (window.MBBook && window.MBBook.active) Object.assign(msg, window.MBBook.describeHeading(h));
+  if (bookActive()) Object.assign(msg, window.MBBook.describeHeading(h));
   toSwift(msg);
 });
 
@@ -531,7 +536,7 @@ function clickedLine(para, e) {
  * 一次一段（<p>／<li>），不是整個 blockquote —— 同一塊常連引好幾句，點哪句就找哪句。
  * 書那欄自己不做：書裡的 blockquote 是書的內容，沒有對應的心得 */
 content.addEventListener('click', (e) => {
-  if (window.MBBook && window.MBBook.active) return;
+  if (bookActive()) return;
   const q = e.target.closest('blockquote');
   if (!q || !content.contains(q)) return;
   if (e.target.closest('a, mark.mb-hl')) return;
