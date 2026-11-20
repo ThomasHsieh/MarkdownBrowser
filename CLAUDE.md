@@ -246,6 +246,16 @@ EPUB 的規格在 `docs/SPEC.md` 第 13 節。最容易被改壞的：
   也一樣會漂，`app.js` 在 resize 時回到捲動停下時記住的位置
 - **整本書串成一條時，任何「每個標題做一次 O(n)」的事都會變慢**：`highlights.js` 的
   `headingOffsets` 是一次走完整份文件算的，不要改回每個標題各建一個 Range
+- **書的節點不能用 `instanceof` 判斷型別**：`book.js` 在看不見的 iframe 裡建好節點才搬進來，
+  JS 物件屬於 iframe 那個環境，`instanceof HTMLImageElement` 永遠是 false（點圖放大因此一張都點不了）。
+  一律看 `localName`
+- **算字的位置時，換行空白的框是 (0,0,0,0)**：標籤之間的 `\n` 被收掉、沒有框，空 range 的
+  `getBoundingClientRect` 回 (0,0,0,0)，翻頁模式換算成第 0 頁、捲動模式是最上面 —— 書的位置
+  還原就是這樣跑回封面的。要從那個字往後找第一個 `getClientRects()` 不是空的字（`rectAt`）
+- **頁首整片是圖時 `readingPoint` 碰不到字**：試點全落在包圖的段落（元素節點）上，只收文字的話
+  只能退回「這一節的開頭」，重開就回到那一節第一頁。圖沒有字，位置記的是圖前面的字數，還原時
+  圖也要算畫得出來的東西，否則會跳過圖落到下一頁。改這段之前拿有整頁專欄圖的書，在寬視窗
+  翻頁模式停在圖頁重開試
 - **兩個 `WebPane` 不能因為切雙欄／tab 而改變視圖結構**，只能改大小與透明度，
   否則 SwiftUI 會重建 WKWebView（見 `ReadingArea`）
 - **實機測試用 `make test-copy`**：另一個 bundle ID 的副本，UserDefaults 跟安裝版分開，
