@@ -49,6 +49,8 @@
   --hl-pink: rgba(224, 102, 143, 0.24);
   --hl-underline: var(--fg);
   --hl-accent: var(--accent);   /* 標記內的粗體；淺色模式要壓深一級才在底色上撐得住 4.5:1 */
+
+  --zoom-backdrop: rgba(0, 0, 0, 0.75);   /* 點圖放大的遮罩 */
 }
 
 /* ── 淺色模式 ──────────────────────────────────────────
@@ -78,6 +80,8 @@
   --hl-green: rgba(95, 184, 120, 0.30);
   --hl-purple: rgba(160, 124, 224, 0.26);
   --hl-accent: #94481a;
+
+  --zoom-backdrop: rgba(0, 0, 0, 0.75);   /* 淺色也用黑：遮罩要把圖跟底下的頁面分開 */
 }
 
 /* 字體與外觀是兩個獨立的軸：data-font 只決定用哪套中文字。
@@ -547,6 +551,29 @@ mark.mb-hl .mb-b { color: var(--hl-accent); }
   line-height: 1.75;
 }
 #mb-footnote.show { display: block; }
+
+/* 點圖放大（imgzoom.js）：只蓋這一欄。z-index 低於焦點外框（40），外框照樣看得到 */
+#content img.mb-zoomable { cursor: zoom-in; }
+#mb-zoom {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 35;
+  align-items: center;
+  justify-content: center;
+  background: var(--zoom-backdrop);
+  cursor: zoom-out;
+}
+#mb-zoom.show { display: flex; }
+#mb-zoom.mb-more { cursor: zoom-in; }
+#mb-zoom img { max-width: none; max-height: none; flex: none; }
+/* 第二段：圖比欄高，遮罩自己上下捲。flex 置中會把超出的上半截推到捲不到的地方，所以改回區塊。
+   捲到底不能連帶捲動底下的頁面 */
+#mb-zoom.mb-wide.show { display: block; overflow-y: auto; overscroll-behavior: contain; }
+#mb-zoom.mb-wide img { display: block; margin: 16px auto; }
+/* 關掉遮罩時捲一下它，讓 WebKit 原地重算游標（imgzoom.js 的 close）。蓋滿整欄才有效 */
+#mb-zoom-nudge { position: fixed; inset: 0; overflow: scroll; opacity: 0; pointer-events: none; z-index: -1; }
+#mb-zoom-nudge > div { height: 200%; }
 #mb-footnote > :last-child { margin-bottom: 0; }
 #mb-footnote .mb-b { font-weight: normal; color: var(--accent); }
 #mb-footnote .mb-i { font-style: italic; }

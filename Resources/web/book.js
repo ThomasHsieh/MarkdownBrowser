@@ -90,6 +90,7 @@
   MB.renderBook = function (payload, opts) {
     opts = opts || {};
     const hl = window.MBHighlights;
+    window.MBImgZoom.close();
     if (payload.pdf) { renderPdf(payload, opts); return; }
     if (BK.pdf) BK.deactivate();
     const anchor = opts.keepScroll ? captureBookAnchor() : null;
@@ -1318,6 +1319,7 @@
   MB.setBookLayout = function (mode) {
     const anchor = BK.active && !BK.fixed ? captureBookAnchor() : null;
     BK.layout = mode;
+    window.MBImgZoom.close();
     if (!BK.active) return;
     if (BK.pdf) { BK.pdfSetLayout(); return; }
     if (BK.fixed) { layoutFixed(); reportPosition(false); return; }
@@ -1634,6 +1636,7 @@
    * 要自己記一筆使用者動過，否則晚到的版面校正會把剛翻的頁拉回去 */
   MB.pageKey = function (k, shift) {
     if (!BK.active) return;
+    if (window.MBImgZoom.closeIfOpen()) return;   // 放大中：只關，不翻
     I().noteUserInput();
     pageKey(k, shift, true);
   };

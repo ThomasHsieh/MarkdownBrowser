@@ -217,6 +217,7 @@ MB.render = function (markdown, opts) {
   clearTimeout(positionTimer);
   positionTimer = null;
   if (window.MBBook) window.MBBook.deactivate();
+  window.MBImgZoom.close();
   const anchor = opts.keepScroll ? captureAnchor() : null;
   const hl = window.MBHighlights;
   const kept = hl ? hl.beforeRender() : null;   // 換內容前先把標記位置寫回錨點欄位
@@ -798,6 +799,7 @@ document.addEventListener('keydown', (e) => {
  * （docs/SPEC.md 13.5）。按鍵不是在這一欄發生的，要自己記一筆使用者動過，
  * 否則晚到的版面校正會把剛捲的位置拉回去。行為比照這一欄自己按的鍵 */
 MB.scrollKey = function (k) {
+  if (window.MBImgZoom.closeIfOpen()) return;   // 放大中：只關，不捲
   lastUserInput = Date.now();
   switch (k) {
     case 'ArrowDown': glideBy(ARROW_STEP); break;
