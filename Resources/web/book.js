@@ -921,23 +921,37 @@
     return r.toString().length;
   }
 
-  function pointAt(sec, off) {
-    const w = document.createTreeWalker(sec, NodeFilter.SHOW_TEXT);
-    let n, pos = 0, last = null;
+  /* 這一節第 off 個字以後，第一個畫得出來的東西的框：字或圖。
+   * 標籤之間的換行空白會被收掉、沒有框，空 range 的 getBoundingClientRect 是 (0,0,0,0)：
+   * 翻頁模式換算成第 0 頁、捲動模式是最上面，書就回到封面。
+   * 圖也要算：頁首是圖的頁記的是圖前面的字數（readingPoint），圖本身沒有字，只找字會落到
+   * 圖後面那段文字，常常已經是下一頁 */
+  function rectAt(sec, off) {
+    const w = document.createTreeWalker(sec, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+    let pos = 0, n;
     while ((n = w.nextNode())) {
-      if (pos + n.data.length > off) return { node: n, off: Math.max(0, off - pos) };
-      pos += n.data.length;
-      last = n;
+      if (n.nodeType === 1) {
+        if (pos >= off && (n.localName === 'img' || n.localName === 'svg')) {
+          const r = n.getBoundingClientRect();
+          if (r.width && r.height) return r;
+        }
+        continue;
+      }
+      const len = n.data.length;
+      if (pos + len > off) {
+        const from = Math.max(0, off - pos);
+        const i = n.data.slice(from).search(/\S/);
+        if (i >= 0) {
+          const r = document.createRange();
+          r.setStart(n, from + i);
+          r.setEnd(n, from + i + 1);
+          const rects = r.getClientRects();
+          if (rects.length) return rects[0];
+        }
+      }
+      pos += len;
     }
-    return last ? { node: last, off: last.data.length } : null;
-  }
-
-  function rectAt(p) {
-    const r = document.createRange();
-    r.setStart(p.node, p.off);
-    r.setEnd(p.node, Math.min(p.node.data.length, p.off + 1));
-    const rects = r.getClientRects();
-    return rects.length ? rects[0] : r.getBoundingClientRect();
+    return null;
   }
 
   /* 閱讀起點：翻頁模式是這一頁的左上角，捲動模式是畫面頂端的第一行 */
@@ -950,13 +964,18 @@
       y0 = 24;
     }
     // 行首可能是縮排的空白或圖片，沿著第一行往右、往下各試幾個點
+    let onElement = null;
     for (const dy of [4, 24, 48]) {
       for (let dx = 2; dx < 400; dx += 36) {
         const range = document.caretRangeFromPoint(x0 + dx, y0 + dy);
-        if (range && content.contains(range.startContainer) && range.startContainer.nodeType === 3) return range;
+        if (!range || !content.contains(range.startContainer)) continue;
+        if (range.startContainer.nodeType === 3) return range;
+        if (!onElement && sectionOf(range.startContainer)) onElement = range;
       }
     }
-    return null;
+    // 頁首整片是圖（專欄、圖表）：一個字都碰不到，試點全落在包圖的段落上。不收的話只能記
+    // 「這一節的開頭」，重開回到那一節的第一頁。記圖前面的字數，還原時 rectAt 會停在這張圖上
+    return onElement;
   }
 
   function captureBookAnchor() {
@@ -987,8 +1006,7 @@
     if (anchor.sec) {
       const sec = document.getElementById(anchor.sec);
       if (sec) {
-        const p = pointAt(sec, anchor.off || 0);
-        return p ? rectAt(p) : sec.getBoundingClientRect();
+        return rectAt(sec, anchor.off || 0) || sec.getBoundingClientRect();
       }
     }
     if (anchor.id) {
