@@ -76,6 +76,10 @@ final class DocumentState: PaneDocument {
         didSet { settings.sidebarVisible = sidebarVisible }
     }
 
+    /// 固定側欄目前的寬度，浮出的側欄照這個寬（SPEC 5.3）。每個視窗各自、不存：
+    /// 拖分隔線時每一格都會寫，不發 @Published，浮出時才讀
+    var sidebarWidth: CGFloat = 240
+
     @Published var sidebarMode: SidebarMode {
         didSet { settings.sidebarMode = sidebarMode }
     }

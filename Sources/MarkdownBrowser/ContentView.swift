@@ -13,9 +13,16 @@ struct ContentView: View {
             if state.sidebarVisible {
                 Sidebar(state: state)
                     .frame(minWidth: 170, idealWidth: 240, maxWidth: 420)
+                    // 浮出的側欄照這個寬（SPEC 5.3）。拿掉的那一刻可能量到 0，不收
+                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
+                        if width >= 170 { state.sidebarWidth = width }
+                    }
             }
             ReadingArea(state: state, book: state.book)
                 .frame(minWidth: 420, maxWidth: .infinity, maxHeight: .infinity)
+                .overlay {
+                    if !state.sidebarVisible { SidebarPeek(state: state) }
+                }
         }
         .frame(minWidth: 640, minHeight: 420)
         .navigationTitle(title)
@@ -128,6 +135,9 @@ struct Sidebar: View {
     /// 展開中的「找不到位置」標記。它們沒有位置可以捲過去，點了改成原地展開全文。
     @State private var expandedOrphans: Set<String> = []
 
+    /// 點了一列之後通知浮出的側欄收起來（SPEC 5.3）
+    @Environment(\.sidebarPicked) private var picked
+
     var body: some View {
         List {
             if !state.siblings.isEmpty {
@@ -139,7 +149,7 @@ struct Sidebar: View {
                             .foregroundStyle(isCurrent ? Color.accentColor : Color.primary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .contentShape(Rectangle())
-                            .onTapGesture { WindowRouter.shared.open(url, in: state) }
+                            .onTapGesture { WindowRouter.shared.open(url, in: state); picked() }
                     }
                 }
             }
@@ -187,6 +197,7 @@ struct Sidebar: View {
                 .onTapGesture {
                     state.bridge?.scrollToHeading(item.id)
                     state.syncBook(fromNoteHeading: item.id)
+                    picked()
                 }
                 .modifier(LinkCursor(active: state.isComparing))
         }
@@ -241,7 +252,7 @@ struct Sidebar: View {
                 .padding(.top, 4)
             ForEach(group.items) { item in
                 row(item, in: pane, expanded: false)
-                    .onTapGesture { pane.bridge?.revealHighlight(item.id) }
+                    .onTapGesture { pane.bridge?.revealHighlight(item.id); picked() }
             }
         }
         if !orphans.isEmpty {

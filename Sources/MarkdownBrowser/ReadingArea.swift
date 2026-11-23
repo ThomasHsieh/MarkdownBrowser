@@ -261,6 +261,8 @@ struct BookContents: View {
     @ObservedObject var state: DocumentState
     @ObservedObject var book: BookPane
 
+    @Environment(\.sidebarPicked) private var picked
+
     var body: some View {
         if book.pdf != nil && book.pdfTocLoaded && book.pdfToc.isEmpty {
             Text("沒有目錄")
@@ -281,6 +283,7 @@ struct BookContents: View {
                     case .chapter(let i): book.selectChapter(i)
                     case .heading(let h): book.selectHeading(h)
                     }
+                    picked()
                 }
                 // 只開書時，對照開關開著才會帶出心得
                 .modifier(LinkCursor(active: state.compareEnabled))
