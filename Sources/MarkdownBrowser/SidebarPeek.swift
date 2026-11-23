@@ -143,3 +143,23 @@ extension EnvironmentValues {
         set { self[SidebarPickedKey.self] = newValue }
     }
 }
+
+/// 側欄裡會跳到別處的列一律用這個，不要直接 onTapGesture：點完要通知浮出的側欄收起來，
+/// 散在各處自己呼叫的話，新增一種列就會漏掉。原地展開的列（找不到位置的標記）不用
+private struct SidebarRowTap: ViewModifier {
+    let action: () -> Void
+    @Environment(\.sidebarPicked) private var picked
+
+    func body(content: Content) -> some View {
+        content.onTapGesture {
+            action()
+            picked()
+        }
+    }
+}
+
+extension View {
+    func sidebarRowTap(_ action: @escaping () -> Void) -> some View {
+        modifier(SidebarRowTap(action: action))
+    }
+}

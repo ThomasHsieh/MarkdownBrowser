@@ -12,10 +12,10 @@ struct ContentView: View {
         HSplitView {
             if state.sidebarVisible {
                 Sidebar(state: state)
-                    .frame(minWidth: 170, idealWidth: 240, maxWidth: 420)
+                    .frame(minWidth: Sidebar.minWidth, idealWidth: 240, maxWidth: 420)
                     // 浮出的側欄照這個寬（SPEC 5.3）。拿掉的那一刻可能量到 0，不收
                     .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
-                        if width >= 170 { state.sidebarWidth = width }
+                        if width >= Sidebar.minWidth { state.sidebarWidth = width }
                     }
             }
             ReadingArea(state: state, book: state.book)
@@ -130,14 +130,13 @@ struct ContentView: View {
 
 struct Sidebar: View {
 
+    /// 固定側欄能拖到的最窄寬度。量寬度給浮出側欄時也拿它擋掉拿掉那一刻的 0
+    static let minWidth: CGFloat = 170
+
     @ObservedObject var state: DocumentState
 
     /// 展開中的「找不到位置」標記。它們沒有位置可以捲過去，點了改成原地展開全文。
     @State private var expandedOrphans: Set<String> = []
-
-    /// 點了一列之後通知浮出的側欄收起來（SPEC 5.3）
-    @Environment(\.sidebarPicked) private var picked
-
     var body: some View {
         List {
             if !state.siblings.isEmpty {
@@ -149,7 +148,7 @@ struct Sidebar: View {
                             .foregroundStyle(isCurrent ? Color.accentColor : Color.primary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .contentShape(Rectangle())
-                            .onTapGesture { WindowRouter.shared.open(url, in: state); picked() }
+                            .sidebarRowTap { WindowRouter.shared.open(url, in: state) }
                     }
                 }
             }
@@ -194,10 +193,9 @@ struct Sidebar: View {
                 .padding(.leading, CGFloat(max(0, item.level - 1)) * 10)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
-                .onTapGesture {
+                .sidebarRowTap {
                     state.bridge?.scrollToHeading(item.id)
                     state.syncBook(fromNoteHeading: item.id)
-                    picked()
                 }
                 .modifier(LinkCursor(active: state.isComparing))
         }
@@ -252,7 +250,7 @@ struct Sidebar: View {
                 .padding(.top, 4)
             ForEach(group.items) { item in
                 row(item, in: pane, expanded: false)
-                    .onTapGesture { pane.bridge?.revealHighlight(item.id); picked() }
+                    .sidebarRowTap { pane.bridge?.revealHighlight(item.id) }
             }
         }
         if !orphans.isEmpty {
