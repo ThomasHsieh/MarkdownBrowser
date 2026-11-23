@@ -23,6 +23,8 @@ struct SidebarPeek: View {
     /// 側欄在視窗裡的位置。右鍵選單關掉時 hover 狀態不可靠（選單追蹤期間收不到進出），
     /// 要拿游標位置自己比
     @State private var panelFrame: CGRect = .zero
+    /// 整個浮出層（＝內容區）的位置，用來換算左緣觸發區
+    @State private var areaFrame: CGRect = .zero
 
     var body: some View {
         ZStack(alignment: .leading) {
@@ -50,18 +52,25 @@ struct SidebarPeek: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { areaFrame = $0 }
         .animation(.easeOut(duration: 0.15), value: shown)
         // 側欄裡的右鍵選單是另一個視窗，游標移到選單上對側欄來說就是「離開」。
-        // 開著時不收，關掉後看游標在不在側欄裡再決定
+        // 開著時不收，關掉後看游標在不在側欄裡再決定。
+        // 選單通知是全 App 的，選單列、工具列的選單、網頁自己的右鍵選單都會發；SwiftUI 的
+        // .contextMenu 又認不出是哪一個 NSMenu。右鍵選單開在游標所在處，所以開始追蹤的那一刻
+        // 游標在側欄裡，才算側欄的選單
         .onReceive(NotificationCenter.default.publisher(for: NSMenu.didBeginTrackingNotification)) { _ in
-            guard shown else { return }
+            guard shown, let p = mousePoint(), panelFrame.contains(p) else { return }
             menuOpen = true
             cancelHide()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSMenu.didEndTrackingNotification)) { _ in
             guard menuOpen else { return }
             menuOpen = false
-            inPanel = mouseInPanel()
+            // 選單追蹤期間收不到進出，兩個旗標都是選單打開前的舊值
+            let p = mousePoint()
+            inPanel = p.map { panelFrame.contains($0) } ?? false
+            inEdge = p.map { edgeFrame.contains($0) } ?? false
             update()
         }
         .onDisappear { cancelHide() }
@@ -109,11 +118,17 @@ struct SidebarPeek: View {
         }
     }
 
-    private func mouseInPanel() -> Bool {
-        guard let window = state.window, let content = window.contentView else { return false }
-        let p = window.mouseLocationOutsideOfEventStream
-        // 視窗座標原點在左下，SwiftUI 的 global 在左上
-        return panelFrame.contains(CGPoint(x: p.x, y: content.bounds.height - p.y))
+    private var edgeFrame: CGRect {
+        CGRect(x: areaFrame.minX, y: areaFrame.minY, width: Self.edgeWidth, height: areaFrame.height)
+    }
+
+    /// 游標在 SwiftUI global 座標（contentView 左上為原點）的位置
+    private func mousePoint() -> CGPoint? {
+        guard let window = state.window, let content = window.contentView else { return nil }
+        // 不假設 contentView 跟視窗一樣高：沒有 fullSizeContentView 時會差一個標題列加工具列
+        var p = content.convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        if !content.isFlipped { p.y = content.bounds.height - p.y }
+        return p
     }
 }
 
