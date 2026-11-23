@@ -41,7 +41,9 @@ struct SidebarPeek: View {
                     .environment(\.sidebarPicked, { dismiss() })
                     .frame(width: state.sidebarWidth)
                     .frame(maxHeight: .infinity)
-                    .background(.regularMaterial)
+                    // 不另外加底：.listStyle(.sidebar) 自帶系統側欄材質，模糊的是視窗後面的桌面，
+                    // 加 .regularMaterial 也被它整片蓋掉。要透出內文得 .scrollContentBackground(.hidden)，
+                    // 但壓在中文內文上的模糊字影會干擾閱讀，刻意維持實心底
                     .clipShape(RoundedRectangle(cornerRadius: 10))
                     .shadow(color: .black.opacity(0.35), radius: 12, x: 2, y: 0)
                     .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { panelFrame = $0 }
